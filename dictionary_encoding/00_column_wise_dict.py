@@ -31,17 +31,70 @@ class StringEncoder:
         """Return encoder configuration for benchmarking/reporting."""
         raise NotImplementedError
 
+class PlainEncoder(StringEncoder):
+    encoded_tensor: torch.Tensor
+    max_length: int
+
+    def init(self):
+        self.encoded_tensor = torch.empty(0, dtype=torch.uint8)
+        self.max_length = 0
+    
+    def encode(self, strings: List[str]) -> None:
+        """
+        Encode and store the given list of strings as a padded tensor.
+        """
+        ts = [torch.tensor(list(bytes(s, "ascii")), dtype=torch.uint8) for s in strings]
+        self.max_length = max(len(s) for s in strings)
+        self.encoded_tensor = torch.nn.utils.rnn.pad_sequence(ts, batch_first=True, padding_value=0)
+    
+    def decode(self, indices: List[int]) -> List[str]:
+        """
+        Decode the given indices back to strings.
+        """
+        return [bytes(self.encoded_tensor[i][self.encoded_tensor[i] > 0].tolist()).decode("ascii") for i in indices]
+    
+    def query_equals(self, query: str) -> List[int]:
+        query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
+        query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
+        matches = (self.encoded_tensor == query_tensor).all(dim=1)
+        return matches.nonzero().squeeze().tolist() 
+
+    def query_less_than(self, query: str) -> List[int]:
+        # Create properly padded query tensor
+        query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
+        query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
+
+        ne_mask = self.encoded_tensor != query_tensor
+        # Find the first position where they differ, or the very first position if they are equal
+        first_ne = ne_mask.int().argmax(dim=1)
+
+        first_ne_tensor = self.encoded_tensor[torch.arange(len(first_ne)), first_ne]
+        # Get whether the first differing position is less than the query, or must be false if they are equal
+        first_lt = first_ne_tensor < query_tensor[first_ne]
+
+        return first_lt.nonzero().squeeze().tolist()
+    
+    def query_prefix(self, prefix: str) -> List[int]:
+        prefix_len = len(prefix)
+        prefix_tensor = torch.tensor(list(bytes(prefix, "ascii")), dtype=torch.uint8)
+
+        matches = (self.encoded_tensor[:, :prefix_len] == prefix_tensor).all(dim=1)
+        return matches.nonzero().squeeze().tolist()
 
 class DictionaryEncoder(StringEncoder):
     """
     Dictionary-based string encoding implementation.
     """
+    unique_words: torch.Tensor
+    encoded_tensor: torch.Tensor
+    inverse_indices: torch.Tensor
+    max_length: int
 
     def __init__(self):
-        self.encoded_tensor = None
-        self.inverse_indices = None
         self.max_length = 0
-        self.unique_words = None
+        self.unique_words = torch.empty(0, dtype=torch.uint8)
+        self.encoded_tensor = torch.empty(0, dtype=torch.uint8)
+        self.inverse_indices = torch.empty(0, dtype=torch.long)
 
     def encode(self, strings: List[str]) -> None:
         """
@@ -268,34 +321,35 @@ class EncodingBenchmark:
 
 # Example usage
 if __name__ == "__main__":
-    encoder = DictionaryEncoder()
-    encoder.encode(
-        [
-            "apwho",
-            "Initially",
-            "apple",
-            "applppp",
-            "bpple",
-            "each",
-            "encoding",
-            "method",
-            "will",
-            "will",
-            "be",
-            "applppp",
-        ]
-    )
-    print("Encoded tensor:", encoder.encoded_tensor)
-    print("Inverse indices:", encoder.inverse_indices)
+    encoders = [DictionaryEncoder(), PlainEncoder()]
+    for encoder in encoders:
+        encoder.encode(
+            [
+                "apwho",
+                "Initially",
+                "apple",
+                "applppp",
+                "bpple",
+                "each",
+                "encoding",
+                "method",
+                "will",
+                "will",
+                "be",
+                "applppp",
+            ]
+        )
+        # print("Encoded tensor:", encoder.encoded_tensor)
+        # print("Inverse indices:", encoder.inverse_indices)
 
-    # Query for equality
-    row_ids = encoder.query_equals("will")
-    print("Row IDs for 'will':", row_ids)
+        # Query for equality
+        row_ids = encoder.query_equals("will")
+        print("Row IDs for 'will':", row_ids)
 
-    # Query for less than
-    row_ids_lt = encoder.query_less_than("bpple")
-    print("Row IDs for strings less than 'bpple':", row_ids_lt)
+        # Query for less than
+        row_ids_lt = encoder.query_less_than("bpple")
+        print("Row IDs for strings less than 'bpple':", row_ids_lt)
 
-    # Query for prefix
-    row_ids_prefix = encoder.query_prefix("ap")
-    print("Row IDs for strings starting with 'ap':", row_ids_prefix)
+        # Query for prefix
+        row_ids_prefix = encoder.query_prefix("ap")
+        print("Row IDs for strings starting with 'ap':", row_ids_prefix)
