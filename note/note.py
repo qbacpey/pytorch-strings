@@ -476,3 +476,5 @@ if __name__ == "__main__":
         print("Row IDs for strings starting with 'ap':", row_ids_prefix)
 
         print(encoder.decode(col))
+
+# 画图？伪代码，不同的PlainEncoding，不同的Selective，几GB的字符串列，可以Breakdown一下，看一下时间花在哪里了，ChunkSize（IO Overlap,Chunk-per-Chunk执行Query），字符串长度，UniqueString，选择度。排序一下各种方法，各种不同的PlainEncoding，字典编码，做一个Slide，现在先**画图**。似乎FGX的数据传输时间可能是一个原因，最好还是使用DGX，反正这个数据集太小了，不应该这么慢
