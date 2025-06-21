@@ -1,8 +1,6 @@
 from typing import List, Dict, Any
 import numpy
 import torch
-import duckdb, duckdb.typing
-import pytest, pytest_benchmark.fixture
 
 
 class StringColumnTensor:
@@ -396,106 +394,6 @@ class DictionaryEncoder(StringEncoder):
             )
         return decoded_strings
 
-class RowWiseDictionaryEncodingStringColumnTensor(StringColumnTensor):
-    dictionary: torch.Tensor
-    encoded_tensor: torch.Tensor
-    max_length: int
-
-    def __init__(self, dictionary: torch.Tensor, encoded_tensor: torch.Tensor, max_length: int):
-        self.dictionary = dictionary
-        self.encoded_tensor = encoded_tensor
-        self.max_length = max_length
-
-    def query_equals(self, query: str) -> torch.Tensor:
-        query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
-        query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
-        
-        # Find the matching code in the dictionary by comparing with each row
-        matches_in_dict = (self.dictionary == query_tensor).all(dim=1)
-        codes = matches_in_dict.nonzero().view(-1)
-        
-        if len(codes) > 0:
-            # If found in dictionary, get index and check against encoded tensor
-            code = codes[0]
-            matches = (self.encoded_tensor == code)
-            return matches.nonzero().view(-1)
-        else:
-            # If not found in dictionary, return empty tensor
-            return torch.empty(0, dtype=torch.long)
-
-    def query_less_than(self, query: str) -> torch.Tensor:
-        # Create properly padded query tensor
-        query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
-        query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
-
-        ne_mask = self.dictionary != query_tensor
-        # Find the first position where they differ, or the very first position if they are equal
-        first_ne = ne_mask.int().argmax(dim=1)
-
-        first_ne_tensor = self.dictionary[torch.arange(len(first_ne)), first_ne]
-        # Get whether the first differing position is less than the query, or must be false if they are equal
-        first_lt = first_ne_tensor < query_tensor[first_ne]
-        lt_codes = first_lt.nonzero().view(-1)
-        if len(lt_codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == lt_codes).any(dim=1)
-            return matches.nonzero().view(-1)
-        else:
-            return torch.empty(0, dtype=torch.long)
-
-    def query_prefix(self, prefix: str) -> torch.Tensor:
-        prefix_len = len(prefix)
-        prefix_tensor = torch.tensor(list(bytes(prefix, "ascii")), dtype=torch.uint8)
-
-        matches_in_dict = (self.dictionary[:, :prefix_len] == prefix_tensor).all(dim=1)
-        codes = matches_in_dict.nonzero().view(-1)
-        if len(codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == codes).any(dim=1)
-            return matches.nonzero().view(-1)
-        else:
-            return torch.empty(0, dtype=torch.long)
-    
-    def query_aggregate(self) -> torch.Tensor:
-        return self.encoded_tensor
-    
-    def query_sort(self, ascending: bool = True) -> torch.Tensor:
-        return torch.argsort(self.encoded_tensor, descending=not ascending)
-
-    def get_config(self) -> Dict[str, Any]:
-        """
-        Return encoder configuration for benchmarking/reporting.
-        """
-        return {"type": "DictionaryEncoder"}
-    
-    def index_select(self, *indices: Any) -> StringColumnTensor:
-        return RowWiseDictionaryEncodingStringColumnTensor(
-            dictionary=self.dictionary,
-            encoded_tensor=self.encoded_tensor[indices],
-            max_length=self.max_length
-        )
-    
-    def __getitem__(self, *indices: Any) -> torch.Tensor:
-        return self.dictionary[self.encoded_tensor[indices]]
-    
-    def __len__(self) -> int:
-        return len(self.encoded_tensor)
-    
-    
-class RowWiseDictionaryEncoder(StringEncoder):
-    def encode(self, strings: List[str]) -> RowWiseDictionaryEncodingStringColumnTensor:
-        ts = [torch.tensor(list(bytes(s, "ascii")), dtype=torch.uint8) for s in strings]
-        max_length = max(len(s) for s in strings)
-        plain_tensor = torch.nn.utils.rnn.pad_sequence(ts, batch_first=True, padding_value=0)
-        # Use torch.unique to find unique words and inverse indices
-        dictionary, encoded_tensor = torch.unique(
-            plain_tensor, dim=0, return_inverse=True
-        )
-        return RowWiseDictionaryEncodingStringColumnTensor(dictionary, encoded_tensor, max_length)
-
-    def decode(self, encoded_tensor: StringColumnTensor) -> List[str]:
-        if not isinstance(encoded_tensor, RowWiseDictionaryEncodingStringColumnTensor):
-            raise TypeError("Expected RowWiseDictionaryEncodingStringColumnTensor for decoding.")
-        return [bytes(encoded_tensor[i][encoded_tensor[i] > 0].tolist()).decode("ascii") for i in range(len(encoded_tensor))]
-
 class TestOperator:
     __test__ = False
     col_name: str
@@ -542,64 +440,9 @@ class PredicatePrefix(TestPredicate):
     def apply(self, col: StringColumnTensor) -> Any:
         return col.query_prefix(self.value)
 
-@pytest.fixture(scope="class")
-def tpch_data(scale: float) -> Dict[str, List[str]]:
-    str_cols: Dict[str, List[str]] = {}
-    print(f"Loading TPCH data with scale factor {scale}...")
-    with duckdb.connect(":memory:") as con:
-        con.execute(f"INSTALL tpch; LOAD tpch;CALL dbgen(sf = {scale});")
-        for table_name in ['customer','orders','lineitem','supplier','part','partsupp','nation','region']:
-            table = con.table(table_name)
-            cols, names, types = table.fetchnumpy(), table.columns, table.types
-            for col_name, col_type in zip(names, types):
-                if col_type == duckdb.typing.VARCHAR:
-                    str_cols[col_name] = cols[col_name].tolist()
-    return str_cols
-
-def string_processing(benchmark: pytest_benchmark.fixture.BenchmarkFixture, tpch_data: Dict[str, List[str]], encoder: StringEncoder, operators: List[TestOperator], device: str):
-    if device == "cuda":
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-
-    with torch.device(device):
-        col_names = [op.col_name for op in operators]
-        cols = {col_name: encoder.encode(tpch_data[col_name]) for col_name in col_names}
-        for operator in operators:
-            print(len(cols[operator.col_name]))
-            print(len(operator.apply(cols[operator.col_name])))
-
-        benchmark(lambda: (
-            [operator.apply(cols[operator.col_name]) for operator in operators],
-            torch.cuda.synchronize() if device == "cuda" else None
-        ))
-
-@pytest.mark.benchmark(
-    warmup=True,
-    warmup_iterations=3,
-    group="string-query-processing",
-)
-class TestStringColumnTensor:
-
-    # todo: scale and operators grouping/ids
-    # todo: deal with large deviation
-    # todo: compare with duckdb
-    # todo: add dictionary encoding
-
-    @pytest.mark.parametrize("scale", [0.01, 0.1, 1], scope="class", ids=lambda scale: f"scale-{scale}")
-    @pytest.mark.parametrize("encoder", [PlainEncoder(), DictionaryEncoder(), RowWiseDictionaryEncoder()], ids=lambda encoder: encoder.__class__.__name__)
-    @pytest.mark.parametrize("device", ["cpu", "cuda"])
-    @pytest.mark.parametrize("operators", [
-        [FilterScan('l_shipmode', PredicateEq('AIR'))],
-    ])
-    def test_string_processing(self, benchmark, tpch_data, operators: List[TestOperator], encoder: StringEncoder, scale: float, device: str):
-        print(f"Testing string query processing with encoder {encoder.__class__.__name__} on scale {scale} and device {device}...")
-        # benchmark.group += f" | FilterScan(l_shipmode==AIR)"
-        # benchmark.group += f" | scale-{scale}"
-        string_processing(benchmark, tpch_data, encoder, operators, device)
-
 # Example usage
 if __name__ == "__main__":
-    encoders = [DictionaryEncoder(), PlainEncoder(), RowWiseDictionaryEncoder()]
+    encoders = [DictionaryEncoder(), PlainEncoder()]
     for encoder in encoders:
         col = encoder.encode(
             [
@@ -633,3 +476,5 @@ if __name__ == "__main__":
         print("Row IDs for strings starting with 'ap':", row_ids_prefix)
 
         print(encoder.decode(col))
+
+# 画图？伪代码，不同的PlainEncoding，不同的Selective，几GB的字符串列，可以Breakdown一下，看一下时间花在哪里了，ChunkSize（IO Overlap,Chunk-per-Chunk执行Query），字符串长度，UniqueString，选择度。排序一下各种方法，各种不同的PlainEncoding，字典编码，做一个Slide，现在先**画图**。似乎FGX的数据传输时间可能是一个原因，最好还是使用DGX，反正这个数据集太小了，不应该这么慢
