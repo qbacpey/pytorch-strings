@@ -1,0 +1,142 @@
+import numpy as np
+import torch
+from typing import List, Dict, Any, Self
+
+class StringColumnTensor:
+    """
+    Base class for string encoding strategies.
+    """
+
+    def query_equals(self, query: str) -> torch.Tensor:
+        """Return RowIDs where the string equals the query."""
+        raise NotImplementedError
+
+    def query_less_than(self, query: str) -> torch.Tensor:
+        """Return RowIDs where the string is less than the query."""
+        raise NotImplementedError
+
+    def query_prefix(self, prefix: str) -> torch.Tensor:
+        """Return RowIDs where the string starts with the given prefix."""
+        raise NotImplementedError
+    
+    def query_aggregate(self) -> torch.Tensor:
+        """
+        Generate inverse indices that map each element's original position
+        to its aggregated group index.
+        
+        Returns:
+        List[int]: A list of length N (the number of original elements), 
+                   where the i-th entry is the index of the aggregate 
+                   group to which element i belongs.
+        """
+        raise NotImplementedError
+    
+    def query_sort(self, ascending: bool = True) -> torch.Tensor:
+        """
+        Generate a permutation index that maps sorted positions 
+        back to their original positions.
+
+        Args:
+            ascending (bool, optional): If True (default), sort in ascending order; 
+                                        if False, sort in descending order.
+
+        Returns:
+            List[int]: A list of length N (the number of elements), 
+                    where the i-th entry is the original index 
+                    of the element now at sorted position i.
+        """
+        raise NotImplementedError
+    
+    def index_select(self, *indices: Any) -> Self:
+        """
+        Select a subset of the encoded strings based on the provided indices.
+        
+        Args:
+            indices: List of indices to select from the encoded column.
+        
+        Returns:
+            StringColumnTensor: A new instance containing only the selected strings.
+        """
+        raise NotImplementedError
+    
+    def __len__(self) -> int:
+        """
+        Return number of rows.
+        """
+        raise NotImplementedError
+
+    def get_config(self) -> Dict[str, Any]:
+        """Return encoder configuration for benchmarking/reporting."""
+        raise NotImplementedError
+    
+    @classmethod
+    def from_strings(cls, strings: List[str]) -> Self:
+        """
+        Create a StringColumnTensor from a list of strings.
+        
+        Args:
+            strings (List[str]): List of strings to encode.
+        
+        Returns:
+            Self: An instance of StringColumnTensor containing the encoded strings.
+        """
+        raise NotImplementedError
+    
+    def to_strings(self) -> List[str]:
+        """
+        Convert the encoded tensor back to a list of strings.
+        
+        Returns:
+            List[str]: The original strings represented by the encoded tensor.
+        """
+        raise NotImplementedError
+    
+    @classmethod
+    def from_string_tensor(cls, string_tensor: 'StringColumnTensor') -> Self:
+        """
+        Create a StringColumnTensor from an existing tensor.
+        
+        Args:
+            tensor (StringColumnTensor): The tensor to encode.
+        
+        Returns:
+            Self: An instance of StringColumnTensor containing the encoded strings.
+        """
+        raise NotImplementedError
+
+    class Encoder:
+        __outer__: type  # Reference to the outer class
+
+        @classmethod
+        def encode(cls, src: List[str] | np.ndarray | 'StringColumnTensor') -> Any:
+            """Encode and store the given list of strings."""
+            if cls.__outer__ is None:
+                raise NotImplementedError
+            # Call from_* on the outer class
+            if isinstance(src, list) or isinstance(src, np.ndarray):
+                return cls.__outer__.from_strings(src)
+            if isinstance(src, StringColumnTensor):
+                return cls.__outer__.from_string_tensor(src)
+            raise TypeError(
+                f"Unsupported type for encoding: {type(src)}. "
+                "Expected List[str], torch.Tensor, or StringColumnTensor."
+            )
+        @classmethod
+        def decode(cls, encoded_tensor: Any) -> List[str]:
+            """Decode the given indices back to strings."""
+            return encoded_tensor.to_strings()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Automatically add an Encoder class to each subclass
+        class Encoder(StringColumnTensor.Encoder):
+            __outer__ = cls
+
+        cls.Encoder = Encoder
+
+# Import all encodings
+from .plain_encoding import PlainEncodingStringColumnTensor
+from .cplain_encoding import CPlainEncodingStringColumnTensor
+from .dictionary_encoding import DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor
+from .unsorted_dictionary_encoding import UnsortedDictionaryEncodingStringColumnTensor, UnsortedCDictionaryEncodingStringColumnTensor
