@@ -34,7 +34,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         """Generate a random string with length between 1 and max_length."""
         l = random.randint(1, max_length)
         return ''.join(random.choices(string.ascii_letters + string.digits, k=l))
-    
+
     def unique_random_strings(count: int, max_length: int = max_length) -> list[str]:
         """Generate count unique random strings with lengths between 1 and max_length."""
         uniq_strs = set()
@@ -43,7 +43,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             if s not in uniq_strs:
                 uniq_strs.add(s)
         return list(uniq_strs)
-    
+
     def zipf_distribution(n: int, a: float = 1.2) -> np.ndarray:
         """Generate Zipf distribution frequency weights"""
         x = np.arange(1, n + 1)
@@ -64,6 +64,8 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             data.extend([str] * count)
         random.shuffle(data)
         return data
+
+    print(f"Generating MSSB data: total_count={total_count}, unique_count={unique_count}, max_length={max_length}, ")
 
     # ===================================================
     # If no predicate is specified, use the simplest generation logic:
@@ -165,7 +167,7 @@ class TestStringGenerator(unittest.TestCase):
         for s in data:
             self.assertTrue(1 <= len(s) <= max_length)
         self.assertEqual(candidates, {})  # No candidate query values
-    
+
     def test_equal_predicate(self):
         # total_count, unique_count, max_length = 1000, 120, 20
         total_count = self.total_count or 100
@@ -301,13 +303,13 @@ class Catalog:
     def __init__(self, records: list[CatalogRecord], path: str):
         self.path = path
         self.records = records
-    
+
     def get_col_file(self, col_name: str) -> str:
         for record in self.records:
             if record.file_id == col_name:
                 return os.path.join(self.path, f"{record.file_id}.npy")
         raise ValueError(f"Column {col_name} not found in catalog.")
-    
+
     def save(self):
         # Write to self.path (output all records in tabular format)
         catalog_file = os.path.join(self.path, "catalog.txt")
@@ -322,7 +324,7 @@ class Catalog:
                 )
             with open(catalog_file, "w", encoding="utf-8") as f, redirect_stdout(f):
                 con.table("catalog").show(max_rows=10000, max_width=10000) # type: ignore
-    
+
     @classmethod
     def load(cls, path: str) -> "Catalog":
         """

@@ -103,24 +103,28 @@ class StringColumnTensor:
             Self: An instance of StringColumnTensor containing the encoded strings.
         """
         raise NotImplementedError
-
+    
     class Encoder:
-        __outer__: type  # Reference to the outer class
+        __outer__: type
 
         @classmethod
-        def encode(cls, src: List[str] | np.ndarray | 'StringColumnTensor') -> Any:
+        def encode(cls, src: List[str] | np.ndarray | torch.Tensor | 'StringColumnTensor') -> Any:
             """Encode and store the given list of strings."""
-            if cls.__outer__ is None:
+            if not hasattr(cls, '__outer__') or cls.__outer__ is None:
                 raise NotImplementedError
-            # Call from_* on the outer class
-            if isinstance(src, list) or isinstance(src, np.ndarray):
-                return cls.__outer__.from_strings(src)
-            if isinstance(src, StringColumnTensor):
-                return cls.__outer__.from_string_tensor(src)
-            raise TypeError(
-                f"Unsupported type for encoding: {type(src)}. "
-                "Expected List[str], torch.Tensor, or StringColumnTensor."
-            )
+
+            match src:
+                case list() | np.ndarray():
+                    return cls.__outer__.from_strings(src)
+                case StringColumnTensor():
+                    return cls.__outer__.from_string_tensor(src)
+                case torch.Tensor():
+                    return cls.__outer__.from_tensor(src)
+                case _:
+                    raise TypeError(
+                        f"Unsupported type for encoding: {type(src)}. "
+                        "Expected List[str], np.ndarray, torch.Tensor, or StringColumnTensor."
+                    )
         @classmethod
         def decode(cls, encoded_tensor: Any) -> List[str]:
             """Decode the given indices back to strings."""

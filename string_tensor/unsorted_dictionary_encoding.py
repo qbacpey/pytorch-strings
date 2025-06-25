@@ -38,7 +38,7 @@ class UnsortedDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColum
         dictionary, encoded_tensor = unique_out
 
         perm = torch.randperm(len(dictionary))
-        dictionary = dictionary.scatter_(dim=0, index=perm, src=dictionary)
+        dictionary = dictionary.scatter(dim=0, index=perm.view(-1, 1), src=dictionary)
         encoded_tensor = perm[encoded_tensor]
 
         return cls(
