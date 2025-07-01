@@ -56,9 +56,9 @@ def string_processing(benchmark: pytest_benchmark.fixture.BenchmarkFixture, data
 )
 class TestStringColumnTensor:
 
-    @pytest.mark.parametrize("scale", [1], scope="class", ids=lambda scale: f"scale-{scale}")
+    @pytest.mark.parametrize("scale", [10], scope="class", ids=lambda scale: f"scale-{scale}")
     @pytest.mark.parametrize("tensor_cls", [PlainEncodingStringColumnTensor, CPlainEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=lambda cls: cls.__name__)
-    @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
+    @pytest.mark.parametrize("device", ["cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
         [FilterScan('l_shipmode', PredicateEq('AIR'))],
     ], scope="class", ids=lambda ops: "")
@@ -70,10 +70,14 @@ class TestStringColumnTensor:
         string_processing(benchmark, tpch_data, tensor_cls.Encoder, operators, device) 
 
     @pytest.mark.parametrize("tensor_cls", [PlainEncodingStringColumnTensor, CPlainEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=lambda cls: cls.__name__)
-    @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
+    @pytest.mark.parametrize("device", ["cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
+        [FilterScan('0001', PredicateEq('tsokmptbcza'))],
         [FilterScan('0002', PredicateEq('tsokmptbcza'))],
-    ], scope="class", ids=lambda ops: "")
+        [FilterScan('0003', PredicateEq('tsokmptbcza'))],
+        [FilterScan('0004', PredicateEq('tsokmptbcza'))],
+        [FilterScan('0005', PredicateEq('tsokmptbcza'))],
+    ], scope="class", ids=["nrows-1e4","nrows-1e5","nrows-1e6","nrows-1e7","nrows-1e8"])
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB")
     def test_mssb_string_processing(self, benchmark, mssb_data, operators: List[MockOperator], tensor_cls: type[StringColumnTensor], device: str):
         print(f"Testing string query processing with encoder {tensor_cls.__name__} on device {device}...")

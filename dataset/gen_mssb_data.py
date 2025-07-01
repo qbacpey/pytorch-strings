@@ -57,8 +57,8 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         counts = ((total_count - len(unique_strs)) * weights // weights.sum()).astype(int) + 1
         if counts.sum() < total_count:
             extra = total_count - counts.sum()
-            counts += extra // len(counts)
-            counts[:extra % len(counts)] += 1
+            counts += (extra // len(counts)).astype(int)
+            counts[:(extra % len(counts)).astype(int)] += 1
 
         for str, count in zip(unique_strs, counts):
             data.extend([str] * count)
@@ -77,6 +77,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
 
     # ===================================================
     # Predicate is "equal"
+    # Let the selectivity_list in front for the weight arr of uni string, the rest value would be broken down by Zipf distribution
     elif predicate == "equal":
         uniq_strs = sorted(unique_random_strings(unique_count))
         selectivity_list = sorted(selectivity_list)

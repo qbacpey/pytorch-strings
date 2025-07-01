@@ -26,4 +26,10 @@ Query support:
 - [ ] Range query: O (log n) complexity
 - [ ] Prefix query
 
+## Commands
+
+```bash
+# Only run the mssb data set
+srun --ntasks=1 --cpus-per-task=16 --gres=gpu:2 --pty pytest -k mssb -s
+```
 
