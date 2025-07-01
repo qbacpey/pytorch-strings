@@ -6,8 +6,59 @@ import os
 import duckdb, duckdb.typing
 import numpy as np
 
+def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRelation, out_path: str):
+    file_id = f"{table_name}.{col_name}.npy"
+    file_path = os.path.join(out_path, file_id)
+    # Save string columns to file first (avoid loading everything into memory later)
+    if not os.path.exists(file_path):
+        print(f"Saving column {table_name}.{col_name} ...")
+        col_data = table.select(col_name).fetchnumpy()[col_name]
+        np.save(file_path, col_data)
+        print(f"Saved to {file_path}")
+        del col_data
+        gc.collect()
+    else:
+        print(f"File {file_path} exists, skipping saving of {table_name}.{col_name}")
+
+    # Calculate statistics for this column via SQL (without loading the entire table into Python)
+    total_count = table.count(col_name).fetchall()[0][0]
+    unique_count = table.count(f"distinct {col_name}").fetchall()[0][0]
+    max_length = table.max(f"length({col_name})").fetchall()[0][0]
+
+    # Get the first 5 distinct values (sorted) as candidate query values
+    uniq_rows = table.select(f"distinct {col_name}").limit(5).fetchall()
+    uniq_values = [row[0] for row in uniq_rows if row[0] is not None]
+
+    catalog_records = []
+    # Generate catalog records for each predicate
+    for predicate in ["equal", "less_than", "prefix"]:
+        sel_list = []    # Store selectivity (float values) for each candidate query
+        sel_queries = []  # mapping: formatted selectivity -> query statement
+        for val in uniq_values:
+            if predicate == "equal":
+                cnt = table.filter(duckdb.ColumnExpression(col_name) == duckdb.ConstantExpression(val)).count("").fetchall()[0][0]
+                query_str = val
+            elif predicate == "less_than":
+                cnt = table.filter(duckdb.ColumnExpression(col_name) < duckdb.ConstantExpression(val)).count("").fetchall()[0][0]
+                query_str = val
+            elif predicate == "prefix":
+                prefix = val[:max(1, len(val)//2)]
+                cnt = table.filter(f"{col_name} like '{prefix}%'").count("").fetchall()[0][0]
+                query_str = prefix
+            else:
+                continue
+            # Execute query and calculate selectivity
+            measured_sel = cnt / total_count if total_count > 0 else 0
+            measured_sel = f"{measured_sel:.3g}"
+            sel_list.append(measured_sel)
+            sel_queries.append((measured_sel, query_str))
+        # Construct current record
+        record = CatalogRecord(file_id, table_name, col_name, total_count, unique_count, max_length, predicate, sel_list, sel_queries)
+        catalog_records.append(record)
+
+    return catalog_records
+
 def generate_and_save_tpch_data(scale: float, path: str = "tpch_data"):
-    print(f"Loading TPCH data with scale factor {scale}...")
     db_path = os.path.join(path, "tmp.db")
     out_path = os.path.join(path, f"sf-{scale}")
     os.makedirs(out_path, exist_ok=True)
@@ -16,6 +67,8 @@ def generate_and_save_tpch_data(scale: float, path: str = "tpch_data"):
     if os.path.exists(catalog_file):
         print(f"Catalog file {catalog_file} already exists, skipping generation.")
         return
+
+    print(f"Loading TPCH data with scale factor {scale}...")
 
     with duckdb.connect(db_path) as con:
         # Predefined TPCH data table names
@@ -28,63 +81,13 @@ def generate_and_save_tpch_data(scale: float, path: str = "tpch_data"):
         # Install and load TPCH extension, generate data
         con.execute(f"INSTALL tpch; LOAD tpch; CALL dbgen(sf = {scale});")
 
-        catalog_records: list[CatalogRecord] = []
-
-        # Process string columns for each table
-        for table_name in tables:
-            table = con.table(table_name)
-            names = table.columns
-            types = table.types
-
-            for col_name, col_type in zip(names, types):
-                if col_type != duckdb.typing.VARCHAR:
-                    continue
-                file_id = f"{table_name}.{col_name}.npy"
-                file_path = os.path.join(out_path, file_id)
-                # Save string columns to file first (avoid loading everything into memory later)
-                if not os.path.exists(file_path):
-                    print(f"Saving column {table_name}.{col_name} ...")
-                    col_data = table.select(col_name).fetchnumpy()[col_name]
-                    np.save(file_path, col_data)
-                    print(f"Saved to {file_path}")
-                    del col_data
-                    gc.collect()
-                else:
-                    print(f"File {file_path} exists, skipping saving of {table_name}.{col_name}")
-                
-                # Calculate statistics for this column via SQL (without loading the entire table into Python)
-                total_count = table.count(col_name).fetchall()[0][0]
-                unique_count = table.count(f"distinct {col_name}").fetchall()[0][0]
-                max_length = table.max(f"length({col_name})").fetchall()[0][0]
-                
-                # Get the first 5 distinct values (sorted) as candidate query values
-                uniq_rows = table.select(f"distinct {col_name}").limit(5).fetchall()
-                uniq_values = [row[0] for row in uniq_rows if row[0] is not None]
-                # Generate catalog records for each predicate
-                for predicate in ["equal", "less_than", "prefix"]:
-                    sel_list = []    # Store selectivity (float values) for each candidate query
-                    sel_queries = []  # mapping: formatted selectivity -> query statement
-                    for val in uniq_values:
-                        if predicate == "equal":
-                            cnt = table.filter(duckdb.ColumnExpression(col_name) == duckdb.ConstantExpression(val)).count("").fetchall()[0][0]
-                            query_str = val
-                        elif predicate == "less_than":
-                            cnt = table.filter(duckdb.ColumnExpression(col_name) < duckdb.ConstantExpression(val)).count("").fetchall()[0][0]
-                            query_str = val
-                        elif predicate == "prefix":
-                            prefix = val[:max(1, len(val)//2)]
-                            cnt = table.filter(f"{col_name} like '{prefix}%'").count("").fetchall()[0][0]
-                            query_str = prefix
-                        else:
-                            continue
-                        # Execute query and calculate selectivity
-                        measured_sel = cnt / total_count if total_count > 0 else 0
-                        measured_sel = f"{measured_sel:.3g}"
-                        sel_list.append(measured_sel)
-                        sel_queries.append((measured_sel, query_str))
-                    # Construct current record
-                    record = CatalogRecord(file_id, table_name, col_name, total_count, unique_count, max_length, predicate, sel_list, sel_queries)
-                    catalog_records.append(record)
+        catalog_records = [record
+            for table_name in tables
+            if (table := con.table(table_name))
+            for col_name, col_type in zip(table.columns, table.types)
+            if col_type == duckdb.typing.VARCHAR
+            for record in generate_tpch_data(table_name, col_name, table, out_path)
+        ]
 
     catalog = Catalog(catalog_records, out_path)
     catalog.save()
@@ -128,7 +131,7 @@ class Catalog:
                 )
             with open(catalog_file, "w", encoding="utf-8") as f, redirect_stdout(f):
                 con.table("catalog").show(max_rows=10000, max_width=10000) # type: ignore
-    
+
     @classmethod
     def load(cls, path: str) -> "Catalog":
         """
