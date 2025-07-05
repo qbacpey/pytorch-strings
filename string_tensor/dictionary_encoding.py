@@ -13,6 +13,31 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
     def __init__(self, dictionary: PlainEncodingStringColumnTensor, encoded_tensor: torch.Tensor):
         self.dictionary = dictionary
         self.encoded_tensor = encoded_tensor
+        
+    def __repr__(self) -> str:        return (
+            f"DictionaryEncodingStringColumnTensor("
+            f"dictionary_size={len(self.dictionary)}, "
+            f"encoded_tensor_shape={self.encoded_tensor.shape})"
+        )
+    
+    def tuple_size(self) -> int:
+        tuple_size = self.encoded_tensor.element_size()
+        # Print the shape of the encoded tensor for debugging
+        # total_bytes = self.encoded_tensor.nbytes
+        # print(f"Encoded tensor shape: {self.encoded_tensor.shape}")
+        # print(f"Number of elements: {self.encoded_tensor.numel()}")
+        # print(f"Size of one element: {self.encoded_tensor.element_size()} bytes")
+        # print(f"Total memory size (in bytes): {total_bytes}")
+        return tuple_size
+    
+    def tuple_counts(self) -> int:
+        """
+        Return the number of tuples in the encoded tensor.
+        
+        Returns:
+            int: The number of tuples in the encoded tensor.
+        """
+        return self.encoded_tensor.numel()
 
     def query_equals(self, query: str) -> torch.Tensor:
         codes = self.dictionary.query_equals(query)

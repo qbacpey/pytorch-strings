@@ -7,6 +7,9 @@ class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
     def __init__(self, encoded_tensor=torch.empty(0, dtype=torch.uint8)):
         super().__init__(encoded_tensor=encoded_tensor)
         self.encoded_tensor_transpose = encoded_tensor.t()
+
+    def __repr__(self) -> str:
+        return f"CPlainEncodingStringColumnTensor(max_length={self.max_length}, encoded_tensor_shape={self.encoded_tensor_transpose.__len__})"
     
     def query_equals(self, query: str) -> torch.Tensor:
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)

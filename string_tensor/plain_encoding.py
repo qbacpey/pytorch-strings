@@ -12,6 +12,27 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
         if encoded_tensor.dim() != 2 or encoded_tensor.dtype != torch.uint8:
             raise ValueError("encoded_tensor must be a 2D tensor of type torch.uint8")
         self.max_length = encoded_tensor.size(1)
+        
+    def tuple_size(self) -> int:
+        """
+        Return the size of the tuple representing each string in bytes.
+        
+        Returns:
+            int: The size of the tuple for each string.
+        """
+        return self.encoded_tensor.element_size() * self.max_length
+    
+    def tuple_counts(self) -> int:
+        """
+        Return the number of tuples in the encoded tensor.
+        
+        Returns:
+            int: The number of tuples in the encoded tensor.
+        """
+        return self.encoded_tensor.numel() // self.max_length
+        
+    def __repr__(self) -> str:
+        return f"PlainEncodingStringColumnTensor(max_length={self.max_length}, encoded_tensor_shape={self.encoded_tensor.shape})"
     
     def query_equals(self, query: str) -> torch.Tensor:
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)

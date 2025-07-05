@@ -4,6 +4,8 @@ import contextlib
 import time
 from pytest_benchmark.plugin import BenchmarkFixture, BenchmarkSession
 from typing import List, Dict, Any, Callable
+import csv
+import os
 
 from string_tensor import *
 from mock_operator import *
@@ -76,13 +78,49 @@ def string_processing(benchmark: BenchmarkFixture, data: MockTable, encoder: typ
     if device == "cuda":
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+    
+    # Would use the "fullname" to join with the CSV file output by Pytest-Benchmark
+    # Add a timestamp to the output_csv_path name for uniqueness
+    output_csv_path = "benchmark_info_from_string_processing.csv"
+    csv_header = [
+        "fullname", 
+        "tuple_count", 
+        "query_result_size", 
+        "tuple_element_size_bytes", 
+        "total_size_bytes"
+    ]
+    file_exists = os.path.isfile(output_csv_path)
 
-    with torch.device(device):
+    with torch.device(device), open(output_csv_path, 'a', newline='') as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(csv_header)
+
         col_names = [op.col_name for op in operators]
         cols = {col_name: encoder.encode(data.cols[col_name]) for col_name in col_names}
+        
         for operator in operators:
-            print(f"Applying operator on column with {len(cols[operator.col_name])} elements...")
-            print(f"Produced {len(operator.apply(cols[operator.col_name]))} results.")
+            # Calculate metrics
+            col = cols[operator.col_name]
+            tuple_count = len(col)
+            query_result_size = len(operator.apply(col))
+            tuple_element_size = col.tuple_size()
+            total_size = tuple_count * tuple_element_size
+
+            # Print to console
+            print(f"Applying operator on column with {tuple_count} elements...")
+            print(f"Produced {query_result_size} results.")
+            print(f"Tuple element size: {tuple_element_size} bytes")
+            print(f"Total size: {total_size} bytes")
+
+            # Write to CSV
+            writer.writerow([
+                benchmark.fullname,
+                tuple_count,
+                query_result_size,
+                tuple_element_size,
+                total_size
+            ])
 
         benchmark(lambda: (
             [operator.apply(cols[operator.col_name]) for operator in operators],
@@ -130,14 +168,58 @@ class TestStringColumnTensor:
 
     @staticmethod
     def encoding_name(tensor_cls: type[StringColumnTensor]) -> str:
-        return tensor_cls.__name__[:-len("StringColumnTensor")]
+        name = tensor_cls.__name__[:-len("StringColumnTensor")]
+        tensor_cls.__name__.replace("StringColumnTensor", "")
+        return f"encoding={name}"
+    
+    @staticmethod
+    def operator_id(operators: list[MockOperator]) -> str:
+        """Generates a structured, parsable ID for a list of operators."""
+        id_parts = []
+        for op in operators:
+            op_name = op.__class__.__name__
+            # Start with common attributes
+            parts = [f"op={op_name}", f"col={op.col_name}"]
 
-    @pytest.mark.parametrize("scale", [1, 10, 50, 100], scope="class", ids=lambda scale: f"scale-{scale}")
-    @pytest.mark.parametrize("tensor_cls", [PlainEncodingStringColumnTensor, CPlainEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
-    @pytest.mark.parametrize("device", ["cuda"], scope="class")
-    @pytest.mark.parametrize("operators", [
-        [FilterScan('l_shipmode', PredicateEq('AIR'))],
-    ], scope="class", ids=lambda ops: "")
+            # Add type-specific attributes
+            if isinstance(op, FilterScan):
+                pred_name = op.predicate.__class__.__name__.replace("Predicate", "")
+                parts.append(f"pred={pred_name}")
+                parts.append(f"val={op.predicate.value}")
+            elif isinstance(op, Sort):
+                parts.append(f"asc={op.ascending}")
+            
+            id_parts.append(",".join(parts))
+        return "|".join(id_parts)
+
+    @pytest.mark.parametrize(
+        "scale",
+        (
+            lambda: [round(i * 0.1, 1) for i in range(1, 11)]
+            + [i for i in range(1, 11)]
+        )(),
+        scope="class",
+        ids=lambda scale: f"scale={scale}",
+    )
+    @pytest.mark.parametrize(
+        "tensor_cls",
+        [
+            PlainEncodingStringColumnTensor,
+            CPlainEncodingStringColumnTensor,
+            DictionaryEncodingStringColumnTensor,
+            CDictionaryEncodingStringColumnTensor,
+        ],
+        ids=encoding_name,
+    )
+    @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class", ids=lambda dev: f"device={dev}")
+    @pytest.mark.parametrize(
+        "operators",
+        [
+            [FilterScan("l_shipmode", PredicateEq("AIR"))],
+        ],
+        scope="class",
+        ids=operator_id,
+    )
     @pytest.mark.benchmark(group="string_tensor_query_processing | TPCH")
 
     def test_tpch_string_processing(self, benchmark, tpch_data, operators: List[MockOperator], tensor_cls: type[StringColumnTensor], scale: float, device: str):
@@ -146,16 +228,15 @@ class TestStringColumnTensor:
         # benchmark.group += f" | scale-{scale}"
         string_processing(benchmark, tpch_data, tensor_cls.Encoder, operators, device) 
 
-
     @pytest.mark.parametrize("tensor_cls", [PlainEncodingStringColumnTensor, CPlainEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
-    @pytest.mark.parametrize("device", ["cuda"], scope="class")
+    @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
-        [FilterScan('0001', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0002', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0003', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0004', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0005', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0006', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0001', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0002', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0003', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0004', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0005', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0006', PredicateEq('tsokmptbcza'))],
     ], scope="class", ids=lambda ops: "")
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB")
 
@@ -163,16 +244,15 @@ class TestStringColumnTensor:
         print(f"Testing string query processing with encoder {tensor_cls.__name__} on device {device}...")
         string_processing(benchmark, mssb_data, tensor_cls.Encoder, operators, device)
 
-
     @pytest.mark.parametrize("tensor_cls", [UnsortedDictionaryEncodingStringColumnTensor, UnsortedCDictionaryEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
-    @pytest.mark.parametrize("device", ["cuda"], scope="class")
+    @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
-        [FilterScan('0001', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0002', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0003', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0004', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0005', PredicateEq('tsokmptbcza'))],
-        [FilterScan('0006', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0001', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0002', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0003', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0004', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0005', PredicateEq('tsokmptbcza'))],
+        # [FilterScan('0006', PredicateEq('tsokmptbcza'))],
     ], scope="class", ids=lambda ops: "")
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB Staged")
 

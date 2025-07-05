@@ -6,6 +6,31 @@ class StringColumnTensor:
     """
     Base class for string encoding strategies.
     """
+    
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the StringColumnTensor.
+        This should be implemented in subclasses to provide meaningful information.
+        """
+        raise NotImplementedError("Subclasses must implement __repr__ method.")
+    
+    def tuple_size(self) -> int:
+        """
+        Return the size of the tuple representing each string in bytes.
+        
+        Returns:
+            int: The size of the tuple for each string.
+        """
+        raise NotImplementedError
+    
+    def tuple_counts(self) -> int:
+        """
+        Return the number of tuples in the encoded tensor.
+        
+        Returns:
+            int: The number of tuples in the encoded tensor.
+        """
+        raise NotImplementedError
 
     def query_equals(self, query: str) -> torch.Tensor:
         """Return RowIDs where the string equals the query."""

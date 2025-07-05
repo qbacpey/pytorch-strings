@@ -10,14 +10,19 @@ tpch_data_gen_list: list[TPCH_DataGenArgs] = [
     # TPCH_DataGenArgs(scale=100),
 ]
 
+# Insert tpch_data_gen_list test from 0.1 to 1, every 0.1; from 1 to 10, every 1
+tpch_data_gen_list += [TPCH_DataGenArgs(scale=round(i * 0.1, 1)) for i in range(1, 11)]
+
+tpch_data_gen_list += [TPCH_DataGenArgs(scale=i) for i in range(1, 11)]
+
 mssb_data_gen_list: list[MSSB_DataGenArgs] = [
     # total_count, unique_count, max_length, predicate, selectivity_list, unit_test
-    MSSB_DataGenArgs(10_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(100_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(10_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(100_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(500_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(10_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(100_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(10_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(100_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    # MSSB_DataGenArgs(500_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
 ]
 
 gen_path = "dataset"
@@ -67,5 +72,5 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    gen_all_tpch_data()
+    gen_all_tpch_data() 
     gen_all_mssb_data()

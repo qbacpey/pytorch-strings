@@ -17,6 +17,13 @@ class UnsortedDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColum
             return matches.nonzero().view(-1)
         # If not found in dictionary, return empty tensor
         return torch.empty(0, dtype=torch.long)
+    
+    def __repr__(self) -> str:
+        return (
+            f"UnsortedDictionaryEncodingStringColumnTensor("
+            f"dictionary_size={len(self.dictionary)}, "
+            f"encoded_tensor_shape={self.encoded_tensor.shape})"
+        )
 
     def query_less_than_codes(self, lt_codes: torch.Tensor) -> torch.Tensor:
         if len(lt_codes) > 0:
