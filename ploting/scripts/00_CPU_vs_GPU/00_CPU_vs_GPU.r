@@ -23,7 +23,7 @@ output_dir <- "plots"
 # HBM on A100/H100 is ~1.6-2.0 TB/s.
 # DDR5 on modern CPUs is ~60-80 GB/s.
 THEORETICAL_GPU_BANDWIDTH <- 1.6e12 # 1.6 TB/s
-THEORETICAL_CPU_BANDWIDTH <- 60e9   # 60 GB/s
+THEORETICAL_CPU_BANDWIDTH <- 60e9 # 60 GB/s
 
 # Time metric to use for throughput calculation ("mean", "min", or "max")
 TIME_METRIC <- "mean"
@@ -50,8 +50,8 @@ plot_data <- data %>%
   # Calculate theoretical throughput based on device and tuple size
   mutate(
     theoretical_throughput = case_when(
-      `param:device` == 'cpu'  ~ THEORETICAL_CPU_BANDWIDTH / tuple_element_size_bytes,
-      `param:device` == 'cuda' ~ THEORETICAL_GPU_BANDWIDTH / tuple_element_size_bytes
+      `param:device` == "cpu" ~ THEORETICAL_CPU_BANDWIDTH / tuple_element_size_bytes,
+      `param:device` == "cuda" ~ THEORETICAL_GPU_BANDWIDTH / tuple_element_size_bytes
     )
   ) %>%
   # Clean up encoding names for better plot titles
@@ -68,7 +68,7 @@ plot_data <- data %>%
 # A reusable function to generate the plot structure
 create_throughput_plot <- function(df) {
   df <- df %>% mutate(`param:scale` = as.factor(`param:scale`))
-  
+
   ggplot(df, aes(x = `param:scale`, y = throughput_tuples_per_sec, color = Device, group = Device)) +
     # --- Measured Performance (colored by Device) ---
     geom_line(linewidth = 1) +
@@ -76,10 +76,10 @@ create_throughput_plot <- function(df) {
 
     # --- Theoretical Performance (black, dashed, with its own legend entry) ---
     geom_line(
-      aes(y = theoretical_throughput, linetype = "Theoretical (Bandwidth / Tuple Size)"), 
+      aes(y = theoretical_throughput, linetype = "Theoretical (Bandwidth / Tuple Size)"),
       linewidth = 1
     ) +
-    
+
     # --- Scales and Labels ---
     scale_y_log10(
       labels = scales::trans_format("log10", scales::math_format(10^.x)),
@@ -91,7 +91,7 @@ create_throughput_plot <- function(df) {
     scale_shape_manual(values = c("CPU" = 16, "CUDA" = 17)) +
     # Manually define the linetype and its legend entry
     scale_linetype_manual(name = "Line Type", values = c("Theoretical (Bandwidth / Tuple Size)" = "dashed")) +
-    
+
     # --- Titles and Theme ---
     labs(
       title = "Measured vs. Theoretical Throughput for String Operations",
@@ -119,26 +119,25 @@ if (PLOT_STYLE == "facet") {
   # Generate a single plot with facets for each encoding type
   p <- create_throughput_plot(plot_data) +
     # Use scales = "fixed" to ensure a uniform Y-axis across all facets
-    facet_wrap(~ encoding_type, scales = "fixed", ncol = 2) +
+    facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(caption = "Each panel represents a different string encoding algorithm.")
-  
+
   # Save the faceted plot
   output_filename <- file.path(output_dir, "00_TPCH_Throughput_Faceted.png")
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
   print(paste("Faceted plot saved to:", output_filename))
-  
 } else if (PLOT_STYLE == "separate") {
   # Generate a separate plot for each encoding type
   encoding_types <- unique(plot_data$encoding_type)
-  
+
   for (enc_type in encoding_types) {
     # Filter data for the current encoding type
     subset_data <- plot_data %>% filter(encoding_type == enc_type)
-    
+
     # Create the plot for the subset
     p <- create_throughput_plot(subset_data) +
       labs(subtitle = paste("Encoding:", enc_type, "| Using", TIME_METRIC, "time"))
-    
+
     # Save the individual plot
     output_filename <- file.path(output_dir, paste0("01_TPCH_Throughput_", enc_type, ".png"))
     ggsave(output_filename, p, width = 10, height = 6, dpi = 300, bg = BACKGROUND_STYLE)

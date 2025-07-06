@@ -2,3 +2,8 @@ __pycache__/
 *.npy
 *.txt
 .vscode/
+.Rhistory
+.Rproj.user/
+.RData
+.Ruserdata
+.Rhistory
