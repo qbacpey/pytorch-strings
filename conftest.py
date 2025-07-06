@@ -1,52 +1,44 @@
 import pytest
-from pytest_benchmark.stats import Metadata
-import re
+import pytest_benchmark.stats
+import pytest_benchmark.csv
 
 
 # hooks need to be placed in a special file named conftest.py for pytest to discover and execute them.
 
+def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_benchmark.stats.Metadata], output_json: dict) -> None:
+    benchmarks_dict: list[dict] = output_json["benchmarks"]
+    for bench in benchmarks_dict:
+        if "operators" in bench["params"]:
+            bench["params"]["operators"] = str(bench["params"]["operators"])
+        if "tensor_cls" in bench["params"]:
+            bench["params"]["tensor_cls"] = bench["params"]["tensor_cls"].__name__.replace("StringColumnTensor", "")
+    
+    # Flatten the stats and extra_info in the benchmarks, only to be used for CSV output but not for JSON output
+    benchmarks_dict = benchmarks_dict.copy()
+    for bench in benchmarks_dict:
+        # flatten the stats
+        bench.update(bench.pop('stats'))
+        # flatten the extra_info
+        bench.update(bench.pop('extra_info'))
 
-def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[Metadata], output_json: dict) -> None:
-    """
-    Cleans up the benchmark parameters in the final JSON output by removing
-    the "UNSERIALIZABLE" wrapper and simplifying class paths.
-    """
-    # The 'benchmarks' key in output_json holds the list of test results.
-    for benchmark_data in output_json['benchmarks']:
-        params = benchmark_data.get('params')
-        if not params:
-            continue
+    extra_fields = ["col", "op", "pred", "val", "tuple_count", "query_result_size", "tuple_element_size_bytes", "total_size_bytes"]
+    # see pytest_benchmark/plugin.py add_display_options --columns
+    stats_fields = ['min', 'max', 'mean', 'stddev', 'median', 'iqr', 'outliers', 'ops', 'rounds', 'iterations']
+    # see pytest_benchmark/plugin.py add_display_options --sort
+    sort_by_field = 'min'
+    # see pytest_benchmark/plugin.py add_display_options --group_by
+    group_by = 'group'
+    # set output file name here
+    csv_file = "results.csv"
 
-        # Clean up the 'operators' parameter
-        if "operators" in params:
-            cleaned_operators = []
-            # The parameter is a list of strings
-            for op_str in params["operators"]:
-                if isinstance(op_str, str) and op_str.startswith("UNSERIALIZABLE["):
-                    # Extract the readable part from "UNSERIALIZABLE[...]"
-                    cleaned_operators.append(op_str[len("UNSERIALIZABLE["):-1])
-                else:
-                    cleaned_operators.append(str(op_str))
-            # Update the params dictionary for the current benchmark
-            params["operators"] = cleaned_operators
-
-        # Clean up the 'tensor_cls' parameter
-        if "tensor_cls" in params:
-            cls_str = params["tensor_cls"]
-            if isinstance(cls_str, str) and cls_str.startswith("UNSERIALIZABLE["):
-                print(f"Original tensor_cls: {cls_str}")
-                known_classes = [
-                    "PlainEncodingStringColumnTensor", 
-                    "CPlainEncodingStringColumnTensor", 
-                    "DictionaryEncodingStringColumnTensor", 
-                    "CDictionaryEncodingStringColumnTensor",
-                    "UnsortedDictionaryEncodingStringColumnTensor",
-                    "UnsortedCDictionaryEncodingStringColumnTensor"
-                ]
-                for class_name in known_classes:
-                    if class_name in cls_str:
-                        params["tensor_cls"] = class_name
-                        break  # Stop after finding the first match
+    results_csv = pytest_benchmark.csv.CSVResults(extra_fields + stats_fields, sort_by_field, config._benchmarksession.logger) # type: ignore
+    groups = config.hook.pytest_benchmark_group_stats(
+            benchmarks=benchmarks_dict,
+            group_by=group_by,
+            config=None,
+        )
+    # write the results to CSV
+    results_csv.render(csv_file, groups)
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """

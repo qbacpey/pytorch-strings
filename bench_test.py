@@ -78,30 +78,15 @@ def string_processing(benchmark: BenchmarkFixture, data: MockTable, encoder: typ
     if device == "cuda":
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
-    
-    # Would use the "fullname" to join with the CSV file output by Pytest-Benchmark
-    # Add a timestamp to the output_csv_path name for uniqueness
-    output_csv_path = "benchmark_info_from_string_processing.csv"
-    csv_header = [
-        "fullname", 
-        "tuple_count", 
-        "query_result_size", 
-        "tuple_element_size_bytes", 
-        "total_size_bytes"
-    ]
-    file_exists = os.path.isfile(output_csv_path)
 
-    with torch.device(device), open(output_csv_path, 'a', newline='') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(csv_header)
+    with torch.device(device):
 
         col_names = [op.col_name for op in operators]
         cols = {col_name: encoder.encode(data.cols[col_name]) for col_name in col_names}
-        
+
         for operator in operators:
             # Calculate metrics
-            col = cols[operator.col_name]
+            col: StringColumnTensor = cols[operator.col_name]
             tuple_count = len(col)
             query_result_size = len(operator.apply(col))
             tuple_element_size = col.tuple_size()
@@ -113,14 +98,15 @@ def string_processing(benchmark: BenchmarkFixture, data: MockTable, encoder: typ
             print(f"Tuple element size: {tuple_element_size} bytes")
             print(f"Total size: {total_size} bytes")
 
-            # Write to CSV
-            writer.writerow([
-                benchmark.fullname,
-                tuple_count,
-                query_result_size,
-                tuple_element_size,
-                total_size
-            ])
+            # Only the last operator's info will be stored in the benchmark's extra_info
+            benchmark.extra_info["col"] = operator.col_name
+            benchmark.extra_info["op"] = operator.__class__.__name__
+            benchmark.extra_info["pred"] = operator.predicate.__class__.__name__.replace("Predicate", "") if isinstance(operator, FilterScan) else None
+            benchmark.extra_info["val"] = operator.predicate.value if isinstance(operator, FilterScan) else None
+            benchmark.extra_info["tuple_count"] = tuple_count
+            benchmark.extra_info["query_result_size"] = query_result_size
+            benchmark.extra_info["tuple_element_size_bytes"] = tuple_element_size
+            benchmark.extra_info["total_size_bytes"] = total_size
 
         benchmark(lambda: (
             [operator.apply(cols[operator.col_name]) for operator in operators],
@@ -145,7 +131,7 @@ def wrap_query_methods(target_cls, predicates: list[str], benchmark: BenchmarkFi
             t = time.perf_counter()
             codes = query_dict(self, query)
             t_query_dict = time.perf_counter() - t
-            t = time.perf_counter()
+            t += t_query_dict
             match_index = query_codes(self, codes)
             t_query_codes = time.perf_counter() - t
             if benchmark.stats and benchmark.stats.stats.data: # skip warmup iterations, where benchmark.stats.stats.data is empty
@@ -194,10 +180,7 @@ class TestStringColumnTensor:
 
     @pytest.mark.parametrize(
         "scale",
-        (
-            lambda: [round(i * 0.1, 1) for i in range(1, 11)]
-            + [i for i in range(1, 11)]
-        )(),
+        [round(i * 0.1, 1) for i in range(1, 11)] + [i for i in range(1, 11)],
         scope="class",
         ids=lambda scale: f"scale={scale}",
     )
@@ -223,7 +206,7 @@ class TestStringColumnTensor:
     @pytest.mark.benchmark(group="string_tensor_query_processing | TPCH")
 
     def test_tpch_string_processing(self, benchmark, tpch_data, operators: List[MockOperator], tensor_cls: type[StringColumnTensor], scale: float, device: str):
-        print(f"Testing string query processing with encoder {tensor_cls.__name__} on scale {scale} and device {device}...")
+        print(f"Testing string query processing with {tensor_cls.__name__} on scale {scale} and device {device}...")
         # benchmark.group += f" | FilterScan(l_shipmode==AIR)"
         # benchmark.group += f" | scale-{scale}"
         string_processing(benchmark, tpch_data, tensor_cls.Encoder, operators, device) 
@@ -241,7 +224,7 @@ class TestStringColumnTensor:
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB")
 
     def test_mssb_string_processing(self, benchmark, mssb_data, operators: List[MockOperator], tensor_cls: type[StringColumnTensor], device: str):
-        print(f"Testing string query processing with encoder {tensor_cls.__name__} on device {device}...")
+        print(f"Testing string query processing with {tensor_cls.__name__} on device {device}...")
         string_processing(benchmark, mssb_data, tensor_cls.Encoder, operators, device)
 
     @pytest.mark.parametrize("tensor_cls", [UnsortedDictionaryEncodingStringColumnTensor, UnsortedCDictionaryEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
@@ -257,7 +240,7 @@ class TestStringColumnTensor:
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB Staged")
 
     def test_mssb_staged_string_processing(self, make_benchmark, mssb_data, operators: List[MockOperator], tensor_cls: type[StringColumnTensor], device: str):
-        print(f"Testing string query processing with encoder {tensor_cls.__name__} on device {device}...")
+        print(f"Testing string query processing with {tensor_cls.__name__} on device {device}...")
 
         benchmark = make_benchmark(self.encoding_name(tensor_cls), "total", "")
         stage1_benchmark = make_benchmark(self.encoding_name(tensor_cls), "lookup_dict", "benchmark.pedantic(...)")
