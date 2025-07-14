@@ -2,6 +2,7 @@ import pandas as pd
 import re
 import sys
 
+
 def process_benchmark_data(input_file: str, output_file: str):
     """
     Reads a benchmark CSV, cleans and structures the parameter columns,
@@ -19,12 +20,12 @@ def process_benchmark_data(input_file: str, output_file: str):
 
     # 1. Clean up the 'param:tensor_cls' column
     known_classes = [
-        "CPlainEncodingStringColumnTensor", 
+        "CPlainEncodingStringColumnTensor",
         "CDictionaryEncodingStringColumnTensor",
-        "PlainEncodingStringColumnTensor", 
-        "DictionaryEncodingStringColumnTensor", 
+        "PlainEncodingStringColumnTensor",
+        "DictionaryEncodingStringColumnTensor",
         "UnsortedDictionaryEncodingStringColumnTensor",
-        "UnsortedCDictionaryEncodingStringColumnTensor"
+        "UnsortedCDictionaryEncodingStringColumnTensor",
     ]
 
     def get_tensor_name(cls_str: str) -> str:
@@ -34,45 +35,46 @@ def process_benchmark_data(input_file: str, output_file: str):
                 return name
         return cls_str  # Return original if no match found
 
-    df['param:tensor_cls'] = df['param:tensor_cls'].apply(get_tensor_name)
-
-    # 2. Extract parts from the 'param:operators' column
-    # This regex captures the three parts: col, pred type, and val
-    op_regex = re.compile(r"col='([^']*)', pred=(\w+)\(value='([^']*)'\)")
-
-    def extract_operator_parts(op_str: str) -> tuple:
-        """Extracts column, predicate, and value from the operator string."""
-        match = op_regex.search(op_str)
-        if match:
-            # Return the captured groups: (col, pred, val)
-            return match.groups()
-        return (None, None, None)
-
-    # Apply the function and expand the resulting tuples into new columns
-    df[['col', 'pred', 'val']] = df['param:operators'].apply(extract_operator_parts).apply(pd.Series)
+    df["param:tensor_cls"] = df["param:tensor_cls"].apply(get_tensor_name)
 
     # 3. Create the final DataFrame
     # Drop the original long 'name' and 'param:operators' columns
-    df_cleaned = df.drop(columns=['param:operators'])
-    
+    df_cleaned = df.drop(columns=["param:operators"])
+
     # Rename the 'name' column to 'fullname' for consistency
-    df_cleaned.rename(columns={'name': 'fullname'}, inplace=True)
+    df_cleaned.rename(columns={"name": "fullname"}, inplace=True)
 
     # Reorder columns for better readability
     final_cols = [
-        'fullname', 
-        'param:tensor_cls', 'param:device', 'param:scale', 
-        'col', 'pred', 'val', 
-        'mean', 'min', 'max', 'stddev', 'ops', 'rounds'
+        "fullname",
+        "param:tensor_cls",
+        "param:device",
+        "param:scale",
+        "col",
+        "op",
+        "pred",
+        "val",
+        "mean",
+        "min",
+        "max",
+        "stddev",
+        "ops",
+        "rounds",
+        "query_result_size",
+        "tuple_element_size_bytes",
+        "tuple_count",
+        "total_size_bytes",
     ]
     df_final = df_cleaned[final_cols]
 
     # 4. Save the cleaned data to a new CSV
     df_final.to_csv(output_file, index=False)
-    print(f"Successfully processed '{input_file}' and saved cleaned data to '{output_file}'")
+    print(
+        f"Successfully processed '{input_file}' and saved cleaned data to '{output_file}'"
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Check if pandas is installed
     try:
         import pandas
@@ -81,7 +83,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Define input and output file names
-    input_csv = 'benchmark_info_from_pytest_benchmark.csv'
-    output_csv = 'cleaned_benchmark_results.csv'
-    
+    input_csv = "0000_cuda_cpu.csv"
+    output_csv = "cleaned_benchmark_results.csv"
+
     process_benchmark_data(input_csv, output_csv)

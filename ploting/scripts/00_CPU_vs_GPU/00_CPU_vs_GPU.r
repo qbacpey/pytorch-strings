@@ -16,7 +16,7 @@ library(stringr)
 # You can modify these parameters to change the plot's behavior.
 
 # File Paths
-input_file <- "../10_Post_Benchmark_Process/01_TPCH_Joined.csv"
+input_file <- "01-100.csv"
 output_dir <- "plots"
 
 # Theoretical Memory Bandwidth (in bytes per second)
@@ -40,6 +40,14 @@ BACKGROUND_STYLE <- "white"
 # Read the joined benchmark data
 data <- read_csv(input_file, show_col_types = FALSE)
 
+# Define a lookup table for descriptive predicate names
+predicate_map <- c(
+  "Eq" = "Equal",
+  "LT" = "Less Than",
+  "Prefix" = "Prefix Match"
+)
+
+
 # Prepare the data for plotting
 plot_data <- data %>%
   # Calculate measured throughput (Tuples per Second)
@@ -61,7 +69,23 @@ plot_data <- data %>%
   # Convert device to a factor for consistent coloring
   mutate(
     Device = factor(toupper(`param:device`))
+  ) %>%
+  # Add a new column with descriptive predicate names using the lookup table
+  mutate(
+    pred_name = recode(pred, !!!predicate_map)
   )
+
+# Validate that all predicates were successfully mapped
+unmapped_preds <- plot_data %>%
+  filter(!pred %in% names(predicate_map)) %>%
+  distinct(pred)
+
+print(paste("Unmapped predicates found:", unmapped_preds))
+
+if (nrow(unmapped_preds) > 0) {
+  stop(paste("Unexpected predicate type(s) found:", paste(unmapped_preds$pred, collapse = ", ")))
+}
+
 
 # --- 2. Plotting Function ---
 
@@ -115,33 +139,58 @@ create_throughput_plot <- function(df) {
 # Create the output directory if it doesn't exist
 dir.create(output_dir, showWarnings = FALSE)
 
+
 if (PLOT_STYLE == "facet") {
-  # Generate a single plot with facets for each encoding type
-  p <- create_throughput_plot(plot_data) +
-    # Use scales = "fixed" to ensure a uniform Y-axis across all facets
-    facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
-    labs(caption = "Each panel represents a different string encoding algorithm.")
+  # Get a list of all unique predicate short names
+  predicate_types <- unique(plot_data$pred)
 
-  # Save the faceted plot
-  output_filename <- file.path(output_dir, "00_TPCH_Throughput_Faceted.png")
-  ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
-  print(paste("Faceted plot saved to:", output_filename))
+  # Loop through each predicate type and create a separate plot file for it.
+  for (pred_type in predicate_types) {
+    # Filter data for the current predicate
+    subset_data <- plot_data %>% filter(pred == pred_type)
+
+    # Get the descriptive name for the title
+    descriptive_pred_name <- unique(subset_data$pred_name)
+
+    # Generate the plot for the current predicate
+    p <- create_throughput_plot(subset_data) +
+      facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
+      labs(
+        title = paste("Throughput for Predicate:", descriptive_pred_name),
+        caption = "Each panel represents a different string encoding algorithm."
+      )
+
+    # Save the faceted plot with a unique name for the predicate
+    output_filename <- file.path(output_dir, paste0("00_TPCH_Faceted_", descriptive_pred_name, ".png"))
+    ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
+    print(paste("Faceted plot saved to:", output_filename))
+  }
 } else if (PLOT_STYLE == "separate") {
-  # Generate a separate plot for each encoding type
-  encoding_types <- unique(plot_data$encoding_type)
+  # Get unique combinations of encoding and predicate
+  plot_combinations <- plot_data %>%
+    distinct(encoding_type, pred, pred_name)
 
-  for (enc_type in encoding_types) {
-    # Filter data for the current encoding type
-    subset_data <- plot_data %>% filter(encoding_type == enc_type)
+  # Generate a separate plot for each combination
+  for (i in 1:nrow(plot_combinations)) {
+    enc_type <- plot_combinations$encoding_type[i]
+    pred_short_name <- plot_combinations$pred[i]
+    pred_long_name <- plot_combinations$pred_name[i]
+
+    # Filter data for the current combination
+    subset_data <- plot_data %>%
+      filter(encoding_type == enc_type, pred == pred_short_name)
 
     # Create the plot for the subset
     p <- create_throughput_plot(subset_data) +
-      labs(subtitle = paste("Encoding:", enc_type, "| Using", TIME_METRIC, "time"))
+      labs(
+        title = paste("Throughput for Predicate:", pred_long_name),
+        subtitle = paste("Encoding:", enc_type, "| Using", TIME_METRIC, "time")
+      )
 
-    # Save the individual plot
-    output_filename <- file.path(output_dir, paste0("01_TPCH_Throughput_", enc_type, ".png"))
+    # Save the individual plot with a more descriptive name
+    output_filename <- file.path(output_dir, paste0("01_TPCH_Separate_", pred_long_name, "_", enc_type, ".png"))
     ggsave(output_filename, p, width = 10, height = 6, dpi = 300, bg = BACKGROUND_STYLE)
-    print(paste("Separate plot saved to:", output_filename))
+    print(paste("Faceted plot saved to:", output_filename))
   }
 }
 # ### How to Use This Script: 首先启动 R 环境，然后`source("00_CPU_vs_GPU.r")`

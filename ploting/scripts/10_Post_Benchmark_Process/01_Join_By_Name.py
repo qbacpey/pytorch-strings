@@ -35,7 +35,7 @@ def join_benchmark_data(size_info_file: str, perf_info_file: str, output_file: s
         left=df_size,
         right=df_perf,
         left_on='fullname',
-        right_on='fullname',
+        right_on='fullname', 
         how='inner'
     )
 

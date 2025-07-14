@@ -4,10 +4,17 @@ from .gen_tpch_data import generate_and_save_tpch_data, TPCH_DataGenArgs, get_tp
 
 tpch_data_gen_list: list[TPCH_DataGenArgs] = [
     # scale
-    # TPCH_DataGenArgs(scale=1),
-    # TPCH_DataGenArgs(scale=10),
-    # TPCH_DataGenArgs(scale=50),
-    # TPCH_DataGenArgs(scale=100),
+    TPCH_DataGenArgs(scale=1),
+    TPCH_DataGenArgs(scale=10),
+    TPCH_DataGenArgs(scale=20),
+    TPCH_DataGenArgs(scale=30),
+    TPCH_DataGenArgs(scale=40),
+    TPCH_DataGenArgs(scale=50),
+    TPCH_DataGenArgs(scale=60),
+    TPCH_DataGenArgs(scale=70),
+    TPCH_DataGenArgs(scale=80),
+    TPCH_DataGenArgs(scale=90),
+    TPCH_DataGenArgs(scale=100),
 ]
 
 # Insert tpch_data_gen_list test from 0.1 to 1, every 0.1; from 1 to 10, every 1
