@@ -180,7 +180,7 @@ class TestStringColumnTensor:
 
     @pytest.mark.parametrize(
         "scale",
-        [round(i * 0.1, 1) for i in range(1, 11)] + [i for i in range(1, 11)] + [i * 10 for i in range(1, 11)],
+        [round(i * 0.1, 1) for i in range(1, 10)] + [i for i in range(1, 10)] + [i * 10 for i in range(1, 11)],
         scope="class",
         ids=lambda scale: f"scale={scale}",
     )
@@ -195,7 +195,7 @@ class TestStringColumnTensor:
         ],
         ids=encoding_name,
     )
-    @pytest.mark.parametrize("device", ["cpu","cpu"], scope="class", ids=lambda dev: f"device={dev}")
+    @pytest.mark.parametrize("device", ["cpu","cuda"], scope="class", ids=lambda dev: f"device={dev}")
     @pytest.mark.parametrize(
         "operators",
         [

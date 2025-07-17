@@ -1,9 +1,9 @@
 import csv
 
 # --- Configuration ---
-CSV_FILE_1 = "001_cuda.csv"
-CSV_FILE_2 = "0002_cpu.csv"
-OUTPUT_CSV = "0000_cuda_cpu.csv"
+CSV_FILE_1 = "0006_unsort.csv"
+CSV_FILE_2 = "0004_unsorted_cuda_cpu.csv"
+OUTPUT_CSV = "0007_all_cuda_cpu.csv"
 
 # --- Merge Logic ---
 with open(CSV_FILE_1, newline='', encoding='utf-8') as f1, \

@@ -83,7 +83,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Define input and output file names
-    input_csv = "0000_cuda_cpu.csv"
-    output_csv = "cleaned_benchmark_results.csv"
+    input_csv = "0006_unsortD_cpu_cuda.csv"
+    output_csv = "0006_cleaned_unsortD_cpu_cuda.csv"
 
     process_benchmark_data(input_csv, output_csv)

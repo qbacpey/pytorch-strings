@@ -16,7 +16,7 @@ library(stringr)
 # You can modify these parameters to change the plot's behavior.
 
 # File Paths
-input_file <- "01-100.csv"
+input_file <- "0006_cleaned_unsortD_cpu_cuda.csv"
 output_dir <- "plots"
 
 # Theoretical Memory Bandwidth (in bytes per second)
