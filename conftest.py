@@ -10,7 +10,7 @@ def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_
     for bench in benchmarks_dict:
         if "operators" in bench["params"]:
             bench["params"]["operators"] = str(bench["params"]["operators"])
-        if "tensor_cls" in bench["params"]:
+        if "tensor_cls" in bench["params"] and isinstance(bench["params"]["tensor_cls"], type):
             bench["params"]["tensor_cls"] = bench["params"]["tensor_cls"].__name__.replace("StringColumnTensor", "")
     
     # Flatten the stats and extra_info in the benchmarks, only to be used for CSV output but not for JSON output

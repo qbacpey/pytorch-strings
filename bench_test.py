@@ -3,9 +3,7 @@ import pytest
 import contextlib
 import time
 from pytest_benchmark.plugin import BenchmarkFixture, BenchmarkSession
-from typing import List, Dict, Any, Callable
-import csv
-import os
+from typing import List
 
 from string_tensor import *
 from mock_operator import *
@@ -250,6 +248,9 @@ class TestStringColumnTensor:
         benchmark = make_benchmark(self.encoding_name(tensor_cls), "total", "")
         stage1_benchmark = make_benchmark(self.encoding_name(tensor_cls), "lookup_dict", "benchmark.pedantic(...)")
         stage2_benchmark = make_benchmark(self.encoding_name(tensor_cls), "query_codes", "benchmark.pedantic(...)")
+
+        stage1_benchmark.extra_info = benchmark.extra_info
+        stage2_benchmark.extra_info = benchmark.extra_info
 
         with wrap_query_methods(tensor_cls, ["equals", "less_than", "prefix"], benchmark, stage1_benchmark, stage2_benchmark):
             string_processing(benchmark, mssb_data, tensor_cls.Encoder, operators, device)
