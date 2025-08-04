@@ -180,18 +180,20 @@ class TestStringColumnTensor:
 
     @pytest.mark.parametrize(
         "scale",
-        [round(i * 0.1, 1) for i in range(1, 10)] + [i for i in range(1, 10)] + [i * 10 for i in range(1, 11)],
+        [i for i in range(1, 10)] + [i * 10 for i in range(1, 11)],
+        # [round(i * 0.1, 1) for i in range(1, 11)],
         scope="class",
         ids=lambda scale: f"scale={scale}",
     )
     @pytest.mark.parametrize(
         "tensor_cls",
         [
-            UnsortedDictionaryEncodingStringColumnTensor, UnsortedCDictionaryEncodingStringColumnTensor,
-            # PlainEncodingStringColumnTensor,
-            # CPlainEncodingStringColumnTensor,
-            # DictionaryEncodingStringColumnTensor,
-            # CDictionaryEncodingStringColumnTensor,
+            UnsortedDictionaryEncodingStringColumnTensor, 
+            UnsortedCDictionaryEncodingStringColumnTensor,
+            PlainEncodingStringColumnTensor,
+            CPlainEncodingStringColumnTensor,
+            DictionaryEncodingStringColumnTensor,
+            CDictionaryEncodingStringColumnTensor,
         ],
         ids=encoding_name,
     )
@@ -199,7 +201,9 @@ class TestStringColumnTensor:
     @pytest.mark.parametrize(
         "operators",
         [
-            [FilterScan("l_shipmode", PredicateEq("AIR"))],
+            # [FilterScan("l_shipmode", PredicateEq("AIR"))],
+            # [FilterScan("l_shipmode", PredicateLt("REG AIR"))],
+            [FilterScan("l_shipmode", PredicatePrefix("TR"))],
         ],
         scope="class",
         ids=operator_id,

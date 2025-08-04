@@ -7,17 +7,20 @@ from .plain_encoding import PlainEncodingStringColumnTensor
 from .cplain_encoding import CPlainEncodingStringColumnTensor
 from .dictionary_encoding import DictionaryEncodingStringColumnTensor
 
-class UnsortedDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColumnTensor):
+
+class UnsortedDictionaryEncodingStringColumnTensor(
+    DictionaryEncodingStringColumnTensor
+):
 
     def query_equals_codes(self, codes: torch.Tensor) -> torch.Tensor:
         if len(codes) > 0:
             # If found in dictionary, get index and check against encoded tensor
             code = codes[0]
-            matches = (self.encoded_tensor == code)
+            matches = self.encoded_tensor == code
             return matches.nonzero().view(-1)
         # If not found in dictionary, return empty tensor
         return torch.empty(0, dtype=torch.long)
-    
+
     def __repr__(self) -> str:
         return (
             f"UnsortedDictionaryEncodingStringColumnTensor("
@@ -44,13 +47,17 @@ class UnsortedDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColum
         )
         dictionary, encoded_tensor = unique_out
 
+        # perm = torch.randperm(len(dictionary))
+        # dictionary = dictionary.scatter(dim=0, index=perm.view(-1, 1), src=dictionary)
+        # encoded_tensor = perm[encoded_tensor]
+
         perm = torch.randperm(len(dictionary))
-        dictionary = dictionary.scatter(dim=0, index=perm.view(-1, 1), src=dictionary)
+        perm_inv = perm.argsort()
+        dictionary = dictionary[perm_inv]
         encoded_tensor = perm[encoded_tensor]
 
         return cls(
-            dictionary=cls.dictionary_cls(dictionary),
-            encoded_tensor=encoded_tensor
+            dictionary=cls.dictionary_cls(dictionary), encoded_tensor=encoded_tensor
         )
 
     @classmethod
@@ -60,22 +67,25 @@ class UnsortedDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColum
         batch_size = len(pd_strings)
         arr = np.zeros((batch_size, max_length), dtype=np.uint8)
         for i, s in enumerate(pd_strings):
-            arr[i, :len(s)] = np.frombuffer(s.encode("ascii"), dtype=np.uint8)
+            arr[i, : len(s)] = np.frombuffer(s.encode("ascii"), dtype=np.uint8)
         plain_tensor = torch.tensor(arr, dtype=torch.uint8)
 
         return cls(
             dictionary=cls.dictionary_cls(plain_tensor),
-            encoded_tensor=torch.tensor(inverse_indices, dtype=torch.long)
+            encoded_tensor=torch.tensor(inverse_indices, dtype=torch.long),
         )
 
     @classmethod
     def from_string_tensor(cls, string_tensor: StringColumnTensor) -> Self:
         if not isinstance(string_tensor, PlainEncodingStringColumnTensor):
             raise TypeError(
-                    f"Unsupported type for UnsortedDictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
-                    "Expected PlainEncodingStringColumnTensor."
-                )
+                f"Unsupported type for UnsortedDictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
+                "Expected PlainEncodingStringColumnTensor."
+            )
         return cls.from_tensor(string_tensor.tensor())
 
-class UnsortedCDictionaryEncodingStringColumnTensor(UnsortedDictionaryEncodingStringColumnTensor):
+
+class UnsortedCDictionaryEncodingStringColumnTensor(
+    UnsortedDictionaryEncodingStringColumnTensor
+):
     dictionary_cls = CPlainEncodingStringColumnTensor

@@ -16,7 +16,7 @@ library(stringr)
 # You can modify these parameters to change the plot's behavior.
 
 # File Paths
-input_file <- "0006_cleaned_unsortD_cpu_cuda.csv"
+input_file <- "0011_allPrefix.csv" # Path to the input CSV file
 output_dir <- "plots"
 
 # Theoretical Memory Bandwidth (in bytes per second)
@@ -43,8 +43,18 @@ data <- read_csv(input_file, show_col_types = FALSE)
 # Define a lookup table for descriptive predicate names
 predicate_map <- c(
   "Eq" = "Equal",
-  "LT" = "Less Than",
-  "Prefix" = "Prefix Match"
+  "Lt" = "Less_Than",
+  "Prefix" = "Prefix_Match"
+)
+
+# Define the desired order for the encoding facets
+encoding_order <- c(
+  "PlainEncoding",
+  "CPlainEncoding",
+  "UnsortedDictionaryEncoding",
+  "UnsortedCDictionaryEncoding",
+  "DictionaryEncoding",
+  "CDictionaryEncoding"
 )
 
 
@@ -65,6 +75,10 @@ plot_data <- data %>%
   # Clean up encoding names for better plot titles
   mutate(
     encoding_type = str_replace(`param:tensor_cls`, "StringColumnTensor", "")
+  ) %>%
+  # Convert encoding_type to a factor with a specific order for plotting
+  mutate(
+    encoding_type = factor(encoding_type, levels = encoding_order)
   ) %>%
   # Convert device to a factor for consistent coloring
   mutate(

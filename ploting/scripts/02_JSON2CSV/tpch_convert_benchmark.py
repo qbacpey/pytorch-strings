@@ -47,8 +47,8 @@ CSV_HEADERS = [
 ]
 
 # 3. Define the input and output file names.
-INPUT_JSON_FILE = "../../raw_data/json/0006_cpu_cuda_unsorted_20250716_143126.json"
-OUTPUT_CSV_FILE = "0003_unsort.csv"
+INPUT_JSON_FILE = "../../raw_data/json/0011_allPrefix_20250721_064006.json"
+OUTPUT_CSV_FILE = "0011_allPrefix.csv"
 
 # --- End of Configuration ---
 
