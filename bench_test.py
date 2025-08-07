@@ -121,13 +121,14 @@ def wrap_query_methods(target_cls, predicates: list[str], benchmark: BenchmarkFi
     query_methods = {}
 
     for predicate_name in predicates:
-        query_dict = getattr(target_cls, f"query_{predicate_name}")
+        query_method = getattr(target_cls, f"query_{predicate_name}")
+        query_dict = getattr(target_cls.dictionary_cls, f"query_{predicate_name}")
         query_codes = getattr(target_cls, f"query_{predicate_name}_codes")
-        query_methods[predicate_name] = query_dict
+        query_methods[predicate_name] = query_method
 
         def wrapped_query(self, query: str) -> torch.Tensor:
             t = time.perf_counter()
-            codes = query_dict(self, query)
+            codes = query_dict(self.dictionary, query)
             t_query_dict = time.perf_counter() - t
             t += t_query_dict
             match_index = query_codes(self, codes)
@@ -141,8 +142,8 @@ def wrap_query_methods(target_cls, predicates: list[str], benchmark: BenchmarkFi
 
     yield
 
-    for predicate_name, query_dict in query_methods.items():
-        setattr(target_cls, f"query_{predicate_name}", query_dict)
+    for predicate_name, query_method in query_methods.items():
+        setattr(target_cls, f"query_{predicate_name}", query_method)
 
 @pytest.mark.benchmark(
     warmup=True,
