@@ -217,12 +217,12 @@ class TestStringColumnTensor:
     @pytest.mark.parametrize("tensor_cls", [PlainEncodingStringColumnTensor, CPlainEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
     @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
-        # [FilterScan('0001', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0002', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0003', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0004', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0005', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0006', PredicateEq('tsokmptbcza'))],
+        [FilterScan('0001', PredicateEq('04inzA'))],
+        [FilterScan('0002', PredicateEq('04Ld'))],
+        [FilterScan('0003', PredicateEq('0JgQzygeH07tZx5ul'))],
+        [FilterScan('0004', PredicateEq('0AcJrzByeqPlr'))],
+        [FilterScan('0005', PredicateEq('0D9Wza7'))],
+        [FilterScan('0006', PredicateEq('0BAb'))],
     ], scope="class", ids=lambda ops: "")
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB")
 
@@ -233,12 +233,12 @@ class TestStringColumnTensor:
     @pytest.mark.parametrize("tensor_cls", [UnsortedDictionaryEncodingStringColumnTensor, UnsortedCDictionaryEncodingStringColumnTensor, DictionaryEncodingStringColumnTensor, CDictionaryEncodingStringColumnTensor], ids=encoding_name)
     @pytest.mark.parametrize("device", ["cpu", "cuda"], scope="class")
     @pytest.mark.parametrize("operators", [
-        # [FilterScan('0001', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0002', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0003', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0004', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0005', PredicateEq('tsokmptbcza'))],
-        # [FilterScan('0006', PredicateEq('tsokmptbcza'))],
+        [FilterScan('0001', PredicateEq('04inzA'))],
+        [FilterScan('0002', PredicateEq('04Ld'))],
+        [FilterScan('0003', PredicateEq('0JgQzygeH07tZx5ul'))],
+        [FilterScan('0004', PredicateEq('0AcJrzByeqPlr'))],
+        [FilterScan('0005', PredicateEq('0D9Wza7'))],
+        [FilterScan('0006', PredicateEq('0BAb'))],
     ], scope="class", ids=lambda ops: "")
     @pytest.mark.benchmark(group="string_tensor_query_processing | MSSB Staged")
 

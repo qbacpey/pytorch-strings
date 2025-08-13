@@ -1,5 +1,6 @@
 # --- 0. Setup: Load Libraries and Configure Parameters ---
 # install.packages(c("ggplot2", "dplyr", "readr", "stringr"))
+# source("00_linear_GB_CPU_vs_GPU.r")
 
 # Install necessary packages if they are not already installed
 if (!require("ggplot2")) install.packages("ggplot2")
@@ -32,7 +33,7 @@ TIME_METRIC <- "mean"
 PLOT_STYLE <- "facet"
 
 # Background style for saved plots: "white" or "transparent"
-BACKGROUND_STYLE <- "white"
+BACKGROUND_STYLE <- "white" 
 
 
 # --- 1. Data Loading and Preparation ---
@@ -60,16 +61,15 @@ encoding_order <- c(
 
 # Prepare the data for plotting
 plot_data <- data %>%
-  # Calculate measured throughput (Tuples per Second)
-  # The time metric is selected here based on the TIME_METRIC variable
+  # Calculate measured throughput in GB/s
   mutate(
-    throughput_tuples_per_sec = tuple_count / .data[[TIME_METRIC]]
+    throughput_gb_per_sec = (total_size_bytes / .data[[TIME_METRIC]]) / 1e9
   ) %>%
-  # Calculate theoretical throughput based on device and tuple size
+  # Define theoretical throughput in GB/s
   mutate(
-    theoretical_throughput = case_when(
-      `param:device` == "cpu" ~ THEORETICAL_CPU_BANDWIDTH / tuple_element_size_bytes,
-      `param:device` == "cuda" ~ THEORETICAL_GPU_BANDWIDTH / tuple_element_size_bytes
+    theoretical_throughput_gb_per_sec = case_when(
+      `param:device` == "cpu" ~ THEORETICAL_CPU_BANDWIDTH / 1e9,
+      `param:device` == "cuda" ~ THEORETICAL_GPU_BANDWIDTH / 1e9
     )
   ) %>%
   # Clean up encoding names for better plot titles
@@ -107,38 +107,47 @@ if (nrow(unmapped_preds) > 0) {
 create_throughput_plot <- function(df) {
   df <- df %>% mutate(`param:scale` = as.factor(`param:scale`))
 
-  ggplot(df, aes(x = `param:scale`, y = throughput_tuples_per_sec, color = Device, group = Device)) +
+  # Create descriptive labels for the legend
+  legend_labels <- c(
+    "CPU" = paste0("CPU (", THEORETICAL_CPU_BANDWIDTH / 1e9, " GB/s)"),
+    "CUDA" = paste0("CUDA (", THEORETICAL_GPU_BANDWIDTH / 1e9, " GB/s)")
+  )
+
+  ggplot(df, aes(x = `param:scale`, y = throughput_gb_per_sec, color = Device, group = Device)) +
     # --- Measured Performance (colored by Device) ---
     geom_line(linewidth = 1) +
     geom_point(size = 3, aes(shape = Device)) +
 
-    # --- Theoretical Performance (black, dashed, with its own legend entry) ---
+    # --- Theoretical Performance (colored by Device) ---
     geom_line(
-      aes(y = theoretical_throughput, linetype = "Theoretical (Bandwidth / Tuple Size)"),
+      aes(y = theoretical_throughput_gb_per_sec, linetype = "Theoretical Bandwidth (DGX)"),
       linewidth = 1
     ) +
 
     # --- Scales and Labels ---
-    scale_y_log10(
-      labels = scales::trans_format("log10", scales::math_format(10^.x)),
-      breaks = scales::trans_breaks("log10", function(x) 10^x, n = 8)
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    # Updated scales to include bandwidth in the legend labels
+    scale_color_manual(
+      name = "Device (Theoretical Bandwidth)",
+      values = c("CPU" = "#0072B2", "CUDA" = "#D55E00"),
+      labels = legend_labels
     ) +
-    # Manually define colors for devices
-    scale_color_manual(values = c("CPU" = "#0072B2", "CUDA" = "#D55E00")) +
-    # Manually define shapes for devices
-    scale_shape_manual(values = c("CPU" = 16, "CUDA" = 17)) +
-    # Manually define the linetype and its legend entry
-    scale_linetype_manual(name = "Line Type", values = c("Theoretical (Bandwidth / Tuple Size)" = "dashed")) +
+    scale_shape_manual(
+      name = "Device (Theoretical Bandwidth)",
+      values = c("CPU" = 16, "CUDA" = 17),
+      labels = legend_labels
+    ) +
+    # Updated linetype scale to match the new description
+    scale_linetype_manual(name = "Line Type", values = c("Theoretical Bandwidth (DGX)" = "dashed")) +
 
     # --- Titles and Theme ---
     labs(
       title = "Measured vs. Theoretical Throughput for String Operations",
       subtitle = paste("Using", TIME_METRIC, "time for calculation"),
       x = "TPC-H Scale Factor",
-      y = "Throughput (Tuples / Second)",
-      color = "Device",
-      shape = "Device",
-      linetype = "Line Type" # Title for the new legend
+      y = "Throughput (GB/s)",
+      # Remove color and shape from labs() as they are now set in the scales
+      linetype = "Line Type"
     ) +
     theme_minimal(base_size = 14) +
     theme(
@@ -147,7 +156,6 @@ create_throughput_plot <- function(df) {
       legend.box = "vertical" # Helps organize multiple legends
     )
 }
-
 # --- 3. Generate and Save Plots ---
 
 # Create the output directory if it doesn't exist
@@ -175,7 +183,7 @@ if (PLOT_STYLE == "facet") {
       )
 
     # Save the faceted plot with a unique name for the predicate
-    output_filename <- file.path(output_dir, paste0("00_TPCH_Faceted_", descriptive_pred_name, ".png"))
+    output_filename <- file.path(output_dir, paste0("00_linear_GB_TPCH_Faceted_", descriptive_pred_name, ".png"))
     ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
     print(paste("Faceted plot saved to:", output_filename))
   }
@@ -202,46 +210,8 @@ if (PLOT_STYLE == "facet") {
       )
 
     # Save the individual plot with a more descriptive name
-    output_filename <- file.path(output_dir, paste0("01_TPCH_Separate_", pred_long_name, "_", enc_type, ".png"))
+    output_filename <- file.path(output_dir, paste0("01_GB_TPCH_Separate_", pred_long_name, "_", enc_type, ".png"))
     ggsave(output_filename, p, width = 10, height = 6, dpi = 300, bg = BACKGROUND_STYLE)
     print(paste("Faceted plot saved to:", output_filename))
   }
 }
-# ### How to Use This Script: 首先启动 R 环境，然后`source("00_CPU_vs_GPU.r")`
-
-# 1.  **Prerequisites:**
-#     *   Make sure you have R installed on your system.
-#     *   Open an R console or RStudio.
-
-# 2.  **Install Packages:** Run the following commands in your R console to install the necessary libraries. The script also includes a check to do this automatically.
-#     ````r
-#     install.packages(c("ggplot2", "dplyr", "readr", "stringr"))
-#     ````
-
-# 3.  **Save the Script:** Save the code above to the specified file path: 00_CPU_vs_GPU.r.
-
-# 4.  **Run the Script:**
-#     *   Open your R environment (like RStudio or a terminal).
-#     *   Set your working directory to the script's location:
-#         ````r
-#         setwd("/home/qba/00_SS25/02_DBLab/10_DMLab/pytorch-strings/ploting/scripts/00_CPU_vs_GPU/")
-#         ````
-#     *   Execute the script:
-#         ````r
-#         source("00_CPU_vs_GPU.r")
-#         ````
-
-# ### What the Script Does:
-
-# 1.  **Configuration:** At the top, you can easily change the input file, theoretical bandwidth values, the time metric (`mean`, `min`, `max`), and the plotting style (`facet` or `separate`).
-# 2.  **Data Processing:** It reads your CSV, calculates the measured throughput in Tuples/Second, and also calculates the theoretical maximum throughput based on your configured bandwidth constants and the size of each tuple.
-# 3.  **Plotting:**
-#     *   It uses `ggplot2` to create a high-quality plot.
-#     *   The Y-axis is on a `log10` scale to clearly show the large performance gap between CPU and GPU.
-#     *   **Solid lines and points** represent your actual measured performance.
-#     *   **Dashed lines** represent the theoretical memory bandwidth limit for CPU and GPU.
-#     *   It uses distinct colors and shapes for CPU and GPU data.
-# 4.  **Output:** Based on your `PLOT_STYLE` setting, it will either:
-#     *   **`facet`**: Create a single PNG file (`00_TPCH_Throughput_Faceted.png`) with a grid of plots, one for each encoding type.
-#     *   **`separate`**: Create multiple PNG files, one for each encoding type (e.g., `01_TPCH_Throughput_PlainEncoding.png`).
-#     *   All plots will be saved in a new `plots` subdirectory.

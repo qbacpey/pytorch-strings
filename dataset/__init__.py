@@ -24,12 +24,12 @@ tpch_data_gen_list: list[TPCH_DataGenArgs] = [
 
 mssb_data_gen_list: list[MSSB_DataGenArgs] = [
     # total_count, unique_count, max_length, predicate, selectivity_list, unit_test
-    # MSSB_DataGenArgs(10_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    # MSSB_DataGenArgs(100_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    # MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    # MSSB_DataGenArgs(10_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    # MSSB_DataGenArgs(100_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    # MSSB_DataGenArgs(500_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(10_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(100_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(10_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(100_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
+    MSSB_DataGenArgs(500_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
 ]
 
 gen_path = "dataset"
