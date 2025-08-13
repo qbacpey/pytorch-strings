@@ -98,9 +98,9 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         return len(self.encoded_tensor)
 
     @classmethod
-    def from_tensor(cls, plain_tensor: torch.Tensor) -> Self:
+    def from_tensor(cls, tensor: torch.Tensor) -> Self:
         dictionary, encoded_tensor = torch.unique(
-            plain_tensor, dim=0, return_inverse=True
+            tensor, dim=0, return_inverse=True
         )
         return cls(
             dictionary=cls.dictionary_cls(dictionary),
@@ -108,7 +108,7 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         )
 
     @classmethod
-    def from_strings(cls, strings: List[str]) -> Self:
+    def from_strings(cls, strings: List[str] | np.ndarray) -> Self:
         max_length = max(len(s) for s in strings)
         batch_size = len(strings)
         arr = np.zeros((batch_size, max_length), dtype=np.uint8)
@@ -123,10 +123,15 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
 
     @classmethod
     def from_string_tensor(cls, string_tensor: StringColumnTensor) -> Self:
-        if not isinstance(string_tensor, PlainEncodingStringColumnTensor):
-            raise TypeError(
+        match string_tensor:
+            case PlainEncodingStringColumnTensor():
+                return cls.from_tensor(string_tensor.tensor())
+            case DictionaryEncodingStringColumnTensor():
+                return cls(PlainEncodingStringColumnTensor.from_string_tensor(string_tensor.dictionary), string_tensor.encoded_tensor)
+            case _:
+                raise TypeError(
                     f"Unsupported type for DictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
-                    "Expected PlainEncodingStringColumnTensor."
+                    "Expected PlainEncodingStringColumnTensor or DictionaryEncodingStringColumnTensor."
                 )
         return cls.from_tensor(string_tensor.tensor())
 

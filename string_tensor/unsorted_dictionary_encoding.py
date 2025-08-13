@@ -41,16 +41,16 @@ class UnsortedDictionaryEncodingStringColumnTensor(
         return torch.empty(0, dtype=torch.long)
 
     @classmethod
-    def from_tensor(cls, plain_tensor: torch.Tensor) -> Self:
+    def from_tensor(cls, tensor: torch.Tensor) -> Self:
         unique_out: Tuple[torch.Tensor, torch.Tensor] = torch.unique(
-            plain_tensor, dim=0, return_inverse=True
+            tensor, dim=0, return_inverse=True
         )
         dictionary, encoded_tensor = unique_out
 
-        # perm = torch.randperm(len(dictionary))
+        # perm = torch.randperm(len(dictionary), generator=torch.Generator().manual_seed(42))
         # dictionary = dictionary.scatter(dim=0, index=perm.view(-1, 1).expand(-1, dictionary.size(1)), src=dictionary)
         # encoded_tensor = perm[encoded_tensor]
-        perm = torch.randperm(len(dictionary))
+        perm = torch.randperm(len(dictionary), generator=torch.Generator(tensor.device).manual_seed(42))
         perm_inv = perm.argsort()
         dictionary = dictionary[perm_inv]
         encoded_tensor = perm[encoded_tensor]
@@ -60,7 +60,7 @@ class UnsortedDictionaryEncodingStringColumnTensor(
         )
 
     @classmethod
-    def from_strings(cls, strings: List[str]) -> Self:
+    def from_strings(cls, strings: List[str] | np.ndarray) -> Self:
         inverse_indices, pd_strings = pd.Series(strings).factorize(sort=False)
         max_length = max(len(s) for s in pd_strings)
         batch_size = len(pd_strings)
@@ -76,11 +76,16 @@ class UnsortedDictionaryEncodingStringColumnTensor(
 
     @classmethod
     def from_string_tensor(cls, string_tensor: StringColumnTensor) -> Self:
-        if not isinstance(string_tensor, PlainEncodingStringColumnTensor):
-            raise TypeError(
-                f"Unsupported type for UnsortedDictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
-                "Expected PlainEncodingStringColumnTensor."
-            )
+        match string_tensor:
+            case PlainEncodingStringColumnTensor():
+                return cls.from_tensor(string_tensor.tensor())
+            case DictionaryEncodingStringColumnTensor():
+                return cls(PlainEncodingStringColumnTensor.from_string_tensor(string_tensor.dictionary), string_tensor.encoded_tensor)
+            case _:
+                raise TypeError(
+                    f"Unsupported type for DictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
+                    "Expected PlainEncodingStringColumnTensor."
+                )
         return cls.from_tensor(string_tensor.tensor())
 
 

@@ -1,83 +1,59 @@
-import numpy as np
-from .gen_mssb_data import generate_and_save_mssb_data, MSSB_DataGenArgs, get_mssb_catalog
-from .gen_tpch_data import generate_and_save_tpch_data, TPCH_DataGenArgs, get_tpch_catalog
+from typing import NamedTuple, TypedDict
+from string_tensor import *
 
-tpch_data_gen_list: list[TPCH_DataGenArgs] = [
-    # scale
-    TPCH_DataGenArgs(scale=1),
-    TPCH_DataGenArgs(scale=10),
-    TPCH_DataGenArgs(scale=20),
-    TPCH_DataGenArgs(scale=30),
-    TPCH_DataGenArgs(scale=40),
-    TPCH_DataGenArgs(scale=50),
-    TPCH_DataGenArgs(scale=60),
-    TPCH_DataGenArgs(scale=70),
-    TPCH_DataGenArgs(scale=80),
-    TPCH_DataGenArgs(scale=90),
-    TPCH_DataGenArgs(scale=100),
-]
+class StringColumnMetadata(NamedTuple):
+    file: str
+    table: str
+    column: str
+    total_count: int
+    unique_count: int
+    max_length: int
+    predicate: str
+    selectivity_list: list[float]
+    query_candidates: list[tuple[float, str]]
 
-# Insert tpch_data_gen_list test from 0.1 to 1, every 0.1; from 1 to 10, every 1
-# tpch_data_gen_list += [TPCH_DataGenArgs(scale=round(i * 0.1, 1)) for i in range(1, 11)]
+class StringTensorDict(TypedDict):
+    list: list[str]
+    PlainEncodingStringColumnTensor: PlainEncodingStringColumnTensor
+    CPlainEncodingStringColumnTensor: CPlainEncodingStringColumnTensor
+    DictionaryEncodingStringColumnTensor: DictionaryEncodingStringColumnTensor
+    CDictionaryEncodingStringColumnTensor: CDictionaryEncodingStringColumnTensor
+    UnsortedDictionaryEncodingStringColumnTensor: UnsortedDictionaryEncodingStringColumnTensor
+    UnsortedCDictionaryEncodingStringColumnTensor: UnsortedCDictionaryEncodingStringColumnTensor
 
-# tpch_data_gen_list += [TPCH_DataGenArgs(scale=i) for i in range(1, 11)]
+class StringTensorData(NamedTuple):
+    meta: StringColumnMetadata
+    tensors: StringTensorDict
 
-mssb_data_gen_list: list[MSSB_DataGenArgs] = [
-    # total_count, unique_count, max_length, predicate, selectivity_list, unit_test
-    MSSB_DataGenArgs(10_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(100_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(10_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(100_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-    MSSB_DataGenArgs(500_000_000, 1000, 20, "equal", [0.01, 0.1, 0.3, 0.5], False),
-]
+def gen_tpch_col(scale: float, cols: list[str] | set[str], path: str = "dataset/tpch_data"):
+    from .gen_tpch_data import generate_and_save_tpch_data
+    generate_and_save_tpch_data(scale, cols, path)
 
-gen_path = "dataset"
+def gen_mssb_col(total_count: int, unique_count: int, max_length: int, predicate: str, selectivity_list: list[float], path: str = "dataset/mssb_data"):
+    from .gen_mssb_data import generate_and_save_mssb_data
+    generate_and_save_mssb_data(total_count, unique_count, max_length, predicate, selectivity_list, path)
 
-def generate_all_tpch_data(path: str = "dataset/tpch_data") -> None:
-    for gen_args in tpch_data_gen_list:
-        generate_and_save_tpch_data(gen_args.scale, path)
-
-def generate_all_mssb_data(path: str = "dataset/mssb_data") -> None:
-    for gen_args in mssb_data_gen_list:
-        generate_and_save_mssb_data(
-            total_count=gen_args.total_count,
-            unique_count=gen_args.unique_count,
-            max_length=gen_args.max_length,
-            predicate=gen_args.predicate,
-            selectivity_list=gen_args.selectivity_list,
-            path=path
-        )
-
-generate_all_mssb_data(gen_path + "/mssb_data")
-generate_all_tpch_data(gen_path + "/tpch_data")
-
-def load_tpch_col(col_name: str, scale: float = 1.0, path: str = "dataset/tpch_data") -> list[str]:
+def load_tpch_col(col_name: str, scale: float, device: str, path: str = "dataset/tpch_data") -> StringTensorData:
     """
     Get the specified column of TPCH data
     :param col_name: column name
     :param scale: data scale factor
     :return: data of the specified column
     """
+    from .gen_tpch_data import get_tpch_catalog
     catalog = get_tpch_catalog(scale, path)
-    col_file = catalog.get_col_file(col_name)
-    return np.load(col_file, allow_pickle=True)
+    if rec := catalog.get_col_record(col_name):
+        return catalog.get_col_data(rec.column, device)
+    raise ValueError(f"Column '{col_name}' not found in catalog.")
 
-def load_mssb_col(col_name: str, path: str = "dataset/mssb_data") -> list[str]:
+def load_mssb_col(total_count: int, unique_count: int, max_length: int, predicate: str, selectivity_list: list[float], device: str, path: str = "dataset/mssb_data") -> StringTensorData:
     """
     Get the specified column of MSSB data
     :param col_name: column name
     :return: data of the specified column
     """
+    from .gen_mssb_data import get_mssb_catalog
     catalog = get_mssb_catalog(path)
-    col_file = catalog.get_col_file(col_name)
-    return np.load(col_file, allow_pickle=True)
-
-__all__ = [
-    "load_tpch_col",
-    "load_mssb_col",
-]
-
-if __name__ == "__main__":
-    generate_all_mssb_data()
-    generate_all_tpch_data()
+    if rec := catalog.get_col_record(total_count, unique_count, max_length, predicate, selectivity_list):
+        return catalog.get_col_data(rec.column, device)
+    raise ValueError(f"Column with total_count={total_count}, unique_count={unique_count}, max_length={max_length}, predicate='{predicate}', selectivity_list={selectivity_list} not found in catalog.")
