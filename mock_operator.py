@@ -1,10 +1,6 @@
 import torch
-from typing import List, Dict
+from typing import List
 from string_tensor import StringColumnTensor
-
-class MockTable:
-    def __init__(self, cols: Dict[str, (List[str] | StringColumnTensor)]):
-        self.cols = cols
 
 class MockOperator:
     col_name: str
@@ -18,6 +14,18 @@ class MockPredicate:
         return f"{self.__class__.__name__}(value='{self.value}')"
     def apply(self, col: StringColumnTensor) -> torch.Tensor:
         raise NotImplementedError
+    @classmethod
+    def __class_getitem__(cls, key: str):
+        _aliases = {
+            "equal": "Eq",
+            "eq": "Eq",
+            "less_than": "Lt",
+            "lt": "Lt",
+        }
+        for subclass in cls.__subclasses__():
+            if subclass.__name__ == f"Predicate{_aliases[key.lower()]}":
+                return subclass
+        raise KeyError(f"No predicate subclass found for key '{key}'")
 
 class FilterScan(MockOperator):
     def __init__(self, col_name: str, predicate: MockPredicate):
@@ -56,3 +64,18 @@ class PredicateLt(MockPredicate):
 class PredicatePrefix(MockPredicate):
     def apply(self, col: StringColumnTensor) -> torch.Tensor:
         return col.query_prefix(self.value)
+
+class MockStringColumnTensor(StringColumnTensor):
+    def __init__(self, strs: List[str]):
+        self.strs = strs
+
+    def query_equals(self, query: str) -> torch.Tensor:
+        return torch.tensor([i for i, s in enumerate(self.strs) if s == query])
+
+    def query_less_than(self, query: str) -> torch.Tensor:
+        """Return RowIDs where the string is less than the query."""
+        return torch.tensor([i for i, s in enumerate(self.strs) if s < query])
+
+    def query_prefix(self, prefix: str) -> torch.Tensor:
+        """Return RowIDs where the string starts with the given prefix."""
+        return torch.tensor([i for i, s in enumerate(self.strs) if s.startswith(prefix)])

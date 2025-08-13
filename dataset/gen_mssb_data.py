@@ -7,11 +7,14 @@ import unittest
 import duckdb
 import numpy as np
 from contextlib import redirect_stdout
-from typing import Optional
-
+from typing import Optional, cast
 from collections import namedtuple
+from typing import TYPE_CHECKING
 
-def generate_mssb_data(total_count, unique_count, max_length, predicate: Optional[str] = None, selectivity_list: Optional[list[float]] = None):
+from string_tensor import *
+from dataset import StringColumnMetadata, StringTensorDict, StringTensorData
+
+def generate_mssb_data(total_count, unique_count, max_length, predicate: Optional[str] = None, selectivity_list: Optional[list[float]] = None) -> tuple[StringTensorDict, list[tuple[float, str]]]:
     """
     Generate string columns for OLAP testing.
     
@@ -51,7 +54,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         weights = weights / weights.sum()
         return weights
 
-    def sample(unique_strs: list[str], weights: np.ndarray, total_count: int) -> list[str]:
+    def sample(unique_strs: list[str], weights: np.ndarray, total_count: int) -> StringTensorDict:
         """Sample from unique_strs according to weights to generate total_count data."""
         data = []
         counts = ((total_count - len(unique_strs)) * weights // weights.sum()).astype(int) + 1
@@ -60,10 +63,37 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             counts += (extra // len(counts)).astype(int)
             counts[:(extra % len(counts)).astype(int)] += 1
 
-        for str, count in zip(unique_strs, counts):
-            data.extend([str] * count)
-        random.shuffle(data)
-        return data
+        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
+            src = PlainEncodingStringColumnTensor.from_strings(unique_strs).tensor()
+            src = torch.unique(src, dim=0, return_inverse=False)
+            src_t = src.t()
+
+            counts = torch.tensor(counts)
+            idxs = torch.arange(len(src))
+            idxs = torch.repeat_interleave(idxs, counts) # repeat each index according to its count
+            idxs = idxs[torch.randperm(len(idxs))]  # shuffle the indices and we get the final distributed indices, also the encoded_tensor in dictionary encoding
+
+            # construct each StringColumnTensor based on src and enc
+            plain = src[idxs]
+            plain_t = src_t[:, idxs]
+            cplain_tensor = CPlainEncodingStringColumnTensor(plain, plain_t)
+
+            csrc = CPlainEncodingStringColumnTensor(src, src_t)
+            cdict_tensor = CDictionaryEncodingStringColumnTensor(csrc, idxs)
+
+            perm = torch.randperm(len(src), generator=torch.Generator(src.device).manual_seed(42))
+            perm_inv = perm.argsort()
+            src_shuf = src[perm_inv]
+            src_shuf_t = src_t[:, perm_inv]
+            enc_remap = perm[idxs]
+            csrc_shuf = CPlainEncodingStringColumnTensor(src_shuf, src_shuf_t)
+            unsorted_cdict_tensor = UnsortedCDictionaryEncodingStringColumnTensor(csrc_shuf, enc_remap)
+
+        final_indices = idxs.tolist() if total_count <= 1000_000 else []
+        strs = [uniq_strs[i] for i in final_indices]
+        tensors = [strs, cplain_tensor, cdict_tensor, unsorted_cdict_tensor]
+
+        return cast(StringTensorDict, {tensor.__class__.__name__: tensor for tensor in tensors})
 
     print(f"Generating MSSB data: total_count={total_count}, unique_count={unique_count}, max_length={max_length}, ")
 
@@ -75,12 +105,12 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         # Construct final data (each string repeated by its frequency), then shuffle
         weights = zipf_distribution(unique_count)
         data = sample(uniq_strs, weights, total_count)
-        return data, {}
+        return data, []
 
     # ===================================================
     # Predicate is "equal"
     # Let the selectivity_list in front for the weight arr of uni string, the rest value would be broken down by Zipf distribution
-    elif predicate == "equal":
+    elif predicate.lower() in ["equal", "eq"]:
         uniq_strs = sorted(unique_random_strings(unique_count))
         selectivity_list = sorted(selectivity_list)
         total_selectivity = sum(selectivity_list)
@@ -91,12 +121,12 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             raise ValueError("Number of selectivities cannot exceed unique_count")
         weights = np.append(selectivity_list, (zipf_distribution(unique_count - num_selectivities) * (1 - total_selectivity)))
         data = sample(uniq_strs, weights, total_count)
-        query_candidates = {sel: str for sel, str in zip(selectivity_list, uniq_strs)}
+        query_candidates = [(sel, str) for sel, str in zip(selectivity_list, uniq_strs)]
         return data, query_candidates
 
     # ===================================================
     # Predicate is "less_than"
-    elif predicate == "less_than":
+    elif predicate.lower() in ["less_than", "lt"]:
         uniq_strs = sorted(unique_random_strings(unique_count))
         selectivity_list = sorted(selectivity_list)
         total_selectivity = selectivity_list[-1]
@@ -119,12 +149,12 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
 
         ext_uniq_strs = uniq_strs + [chr(ord(uniq_strs[-1][0]) + 1)]  # Ensure the last string is larger than all others
         bound_strs = [ext_uniq_strs[i] for i in np.cumsum(cand_uniq_counts)]
-        query_candidates = {sel: str for sel, str in zip(selectivity_list, bound_strs)}
+        query_candidates = [(sel, str) for sel, str in zip(selectivity_list, bound_strs)]
         return data, query_candidates
 
     # ===================================================
     # Predicate is "prefix"
-    elif predicate == "prefix":
+    elif predicate.lower().startswith("pre"):
         total_selectivity = sum(selectivity_list)
         num_selectivities = len(selectivity_list)
         if total_selectivity > 1:
@@ -145,7 +175,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         uniq_strs.extend(unique_random_strings(unique_count - cand_total_count))
         weights = np.append(weights, zipf_distribution(unique_count - cand_total_count) * (1 - total_selectivity))
         data = sample(uniq_strs, weights, total_count)
-        query_candidates = {sel: str for sel, str in zip(selectivity_list, prefixes)}
+        query_candidates = [(sel, str) for sel, str in zip(selectivity_list, prefixes)]
         return data, query_candidates
     else:
         raise ValueError("Unsupported predicate type")
@@ -164,10 +194,11 @@ class TestStringGenerator(unittest.TestCase):
         max_length = self.max_length or 20
 
         data, candidates = generate_mssb_data(total_count, unique_count, max_length)
+        data = data["list"]
         self.assertEqual(len(data), total_count)
         for s in data:
             self.assertTrue(1 <= len(s) <= max_length)
-        self.assertEqual(candidates, {})  # No candidate query values
+        self.assertEqual(candidates, [])  # No candidate query values
 
     def test_equal_predicate(self):
         # total_count, unique_count, max_length = 1000, 120, 20
@@ -177,8 +208,10 @@ class TestStringGenerator(unittest.TestCase):
         selectivities = self.selectivity_list or [0.05, 0.2, 0.5]  # For example 5%, 20%, 50%
         data, candidates = generate_mssb_data(total_count, unique_count, max_length,
                                                  predicate="equal",
-                                                 selectivity_list=selectivities)   
-        print("data:", data)
+                                                 selectivity_list=selectivities)
+        data = data["list"]  
+        candidates = {s: v for s, v in candidates}
+        print("data:", data[:10])
         print("Equal query candidates:", candidates)
 
         self.assertEqual(len(data), total_count)
@@ -190,6 +223,7 @@ class TestStringGenerator(unittest.TestCase):
             candidate_val = candidates[s]
             expected = round(s * (total_count - unique_count)) + 1
             actual = data.count(candidate_val)
+            print(f"Selectivity {s}: expected {expected}, actual {actual}")
             self.assertAlmostEqual(actual, expected, delta=round(0.05 * total_count))  # Allow 5% error
 
     def test_less_than_predicate(self):
@@ -201,7 +235,9 @@ class TestStringGenerator(unittest.TestCase):
         data, candidates = generate_mssb_data(total_count, unique_count, max_length,
                                                  predicate="less_than",
                                                  selectivity_list=selectivities)
-        print("data:", data)
+        data = data["list"]
+        candidates = {s: v for s, v in candidates}
+        print("data:", data[:10])
         print("Less than query candidates:", candidates)
 
         self.assertEqual(len(data), total_count)
@@ -213,6 +249,7 @@ class TestStringGenerator(unittest.TestCase):
             # For less_than queries, count rows strictly less than candidate_val
             actual = sum(1 for x in data if x < candidate_val)
             expected = round(s * (total_count - unique_count)) + 1
+            print(f"Selectivity {s}: expected {expected}, actual {actual}")
             self.assertAlmostEqual(actual, expected, delta=round(0.05 * total_count))
 
     def test_prefix_predicate(self):
@@ -224,7 +261,9 @@ class TestStringGenerator(unittest.TestCase):
         data, candidates = generate_mssb_data(total_count, unique_count, max_length,
                                                  predicate="prefix",
                                                  selectivity_list=selectivities)
-        print("data:", data)
+        data = data["list"]
+        candidates = {s: v for s, v in candidates}
+        print("data:", data[:10])
         print("Prefix query candidates:", candidates)
 
         self.assertEqual(len(data), total_count)
@@ -235,6 +274,7 @@ class TestStringGenerator(unittest.TestCase):
             candidate_val = candidates[s]
             actual = sum(1 for x in data if x.startswith(candidate_val))
             expected = round(s * (total_count - unique_count)) + 1
+            print(f"Selectivity {s}: expected {expected}, actual {actual}")
             self.assertAlmostEqual(actual, expected, delta=round(0.05 * total_count))
 # ==============================================
 
@@ -243,12 +283,12 @@ def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate
     Generate test data columns based on input parameters:
       total_count, unique_count, max_length, predicate, selectivity
     Call generate_mssb_data() to generate data columns (selectivity passed as list [selectivity]),
-    then save as npy format to a unified directory, and save parameters and query candidate mapping to the mapping file catalog.txt,
-    file names use sequentially incrementing numbers (e.g., 0001.npy).
+    then save as pt format to a unified directory, and save parameters and query candidate mapping to the mapping file catalog.txt,
+    file names use sequentially incrementing numbers (e.g., 0001.pt).
     
     If a file with the same parameters already exists, don't generate again, just return the path to the corresponding file.
     
-    Returns: Path to the generated or existing npy file.
+    Returns: Path to the generated or existing pt file.
     """
     if not os.path.exists(path):
         os.makedirs(path)
@@ -256,72 +296,98 @@ def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate
     catalog = Catalog.load(path)
     
     # Check if a record with the same parameters already exists
-    for rec in catalog.records:
-        if (rec.total_count == total_count and
-            rec.unique_count == unique_count and
-            rec.max_length == max_length and
-            rec.predicate == predicate and
-            rec.selectivity_list == selectivity_list):
-            file_name = f"{rec.file_id}.npy"
-            print(f"Dataset already exists: {file_name}, skipping generation.")
-            return
-    
+    if rec := catalog.get_col_record(total_count, unique_count, max_length, predicate, selectivity_list):
+        print(f"Dataset already exists: {rec.file}, skipping generation.")
+        return
+
     # No matching record found, generate a new dataset
     # Call external generate_mssb_data function (returns data, query_candidates)
     data, query_candidates = generate_mssb_data(total_count, unique_count, max_length, predicate, selectivity_list)
-    
+
+    if data["list"]:
+        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
+            strs = data["list"]
+            cplain = data["CPlainEncodingStringColumnTensor"]
+            cdict = data["CDictionaryEncodingStringColumnTensor"]
+            unsorted_cdict = data["UnsortedCDictionaryEncodingStringColumnTensor"]
+
+            cplain_expected = CPlainEncodingStringColumnTensor.from_strings(strs)
+            cdict_expected = CDictionaryEncodingStringColumnTensor.from_string_tensor(cplain_expected)
+            unsorted_cdict_expected = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(cplain_expected)
+
+            assert (cplain.encoded_tensor.equal(cplain_expected.encoded_tensor) and 
+                cplain.encoded_tensor_transpose.equal(cplain_expected.encoded_tensor_transpose)
+            ), "CPlainEncodingStringColumnTensor does not match expected."
+            assert (cdict.encoded_tensor.equal(cdict_expected.encoded_tensor) and
+                cdict.dictionary.encoded_tensor.equal(cdict_expected.dictionary.encoded_tensor) and
+                cast(CPlainEncodingStringColumnTensor, cdict.dictionary).encoded_tensor_transpose.equal(
+                    cast(CPlainEncodingStringColumnTensor, cdict.dictionary).encoded_tensor_transpose
+                )
+            ), "CDictionaryEncodingStringColumnTensor does not match expected."
+            assert (unsorted_cdict.encoded_tensor.equal(unsorted_cdict_expected.encoded_tensor) and
+                unsorted_cdict.dictionary.encoded_tensor.equal(unsorted_cdict_expected.dictionary.encoded_tensor) and
+                cast(CPlainEncodingStringColumnTensor, unsorted_cdict.dictionary).encoded_tensor_transpose.equal(
+                    cast(CPlainEncodingStringColumnTensor, unsorted_cdict.dictionary).encoded_tensor_transpose
+                )
+            ), "UnsortedCDictionaryEncodingStringColumnTensor does not match expected."
+
     # Determine new File ID (sequentially incrementing, like 0001,0002,...)
     if catalog.records:
-        new_id = max(int(rec.file_id) for rec in catalog.records) + 1
+        new_id = max(int(rec.column) for rec in catalog.records) + 1
     else:
         new_id = 1
-    file_id = f"{new_id:04d}"
-    file_name = f"{file_id}.npy"
+    column = f"{new_id:04d}"
+    file_name = f"{column}.pt"
     file_path = os.path.join(path, file_name)
-    
-    # Save data as npy file (convert to numpy array)
-    np.save(file_path, np.array(data))
-    
-    new_record = CatalogRecord(file_id, total_count, unique_count, max_length, predicate, selectivity_list, query_candidates)
+
+    # Save data as pytorch file
+    torch.save(data, file_path)
+
+    new_record = CatalogRecord(file_name, "MSSB", column, total_count, unique_count, max_length, predicate, selectivity_list, query_candidates)
     catalog.records.append(new_record)
     catalog.save()
 
-class CatalogRecord:
-    """
-    Class for storing dataset mapping records.
-    Includes file ID, total rows, unique string count, max length, predicate type, selectivity list, and query candidate mapping.
-    """
-    def __init__(self, file_id, total_count, unique_count, max_length, predicate, selectivity_list, query_candidates):
-        self.file_id = file_id
-        self.total_count = total_count
-        self.unique_count = unique_count
-        self.max_length = max_length
-        self.predicate = predicate
-        self.selectivity_list = selectivity_list
-        self.query_candidates = query_candidates
+class CatalogRecord(StringColumnMetadata):
+    pass
 
 class Catalog:
     def __init__(self, records: list[CatalogRecord], path: str):
         self.path = path
         self.records = records
 
-    def get_col_file(self, col_name: str) -> str:
+    def get_col_record(self, total_count: int, unique_count: int, max_length: int, predicate: str, selectivity_list: list[float]) -> CatalogRecord | None:
+        for rec in self.records:
+            if (rec.total_count == total_count and
+                rec.unique_count == unique_count and
+                rec.max_length == max_length and
+                rec.predicate == predicate and
+                rec.selectivity_list == selectivity_list):
+                return rec
+        return None
+
+    def get_col_data(self, col_name: str, device: str) -> StringTensorData:
         for record in self.records:
-            if record.file_id == col_name:
-                return os.path.join(self.path, f"{record.file_id}.npy")
+            if record.column == col_name:
+                file_name = os.path.join(self.path, record.file)
+                data: StringTensorDict = torch.load(file_name, map_location=device)
+                data["DictionaryEncodingStringColumnTensor"] = data["CDictionaryEncodingStringColumnTensor"].to_string_tensor(DictionaryEncodingStringColumnTensor)
+                data["PlainEncodingStringColumnTensor"] = data["CPlainEncodingStringColumnTensor"].to_string_tensor(PlainEncodingStringColumnTensor)
+                data["UnsortedDictionaryEncodingStringColumnTensor"] = data["UnsortedCDictionaryEncodingStringColumnTensor"].to_string_tensor(UnsortedDictionaryEncodingStringColumnTensor)
+                return StringTensorData(record, data)
         raise ValueError(f"Column {col_name} not found in catalog.")
 
     def save(self):
         # Write to self.path (output all records in tabular format)
         catalog_file = os.path.join(self.path, "catalog.txt")
         with duckdb.connect(":memory:") as con:
-            con.execute("CREATE TABLE catalog (file_id VARCHAR, total_count INTEGER, unique_count INTEGER, max_length INTEGER, predicate VARCHAR, selectivity_list JSON, query_candidates JSON)")
+            con.execute("CREATE TABLE catalog (file_name VARCHAR, table_name VARCHAR, column_name VARCHAR, total_count INTEGER, unique_count INTEGER, max_length INTEGER, predicate VARCHAR, selectivity_list JSON, query_candidates JSON)")
             for rec in self.records:
                 con.execute(
-                    "INSERT INTO catalog VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (rec.file_id, rec.total_count, rec.unique_count,
-                     rec.max_length, rec.predicate,
-                     json.dumps(rec.selectivity_list), json.dumps(rec.query_candidates))
+                    "INSERT INTO catalog VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (rec.file, rec.table, rec.column, rec.total_count, rec.unique_count,
+                    rec.max_length, rec.predicate,
+                    json.dumps([format(x, ".3g") for x in rec.selectivity_list]),
+                    json.dumps([(format(x, ".3g"), y) for x, y in rec.query_candidates]))
                 )
             with open(catalog_file, "w", encoding="utf-8") as f, redirect_stdout(f):
                 con.table("catalog").show(max_rows=10000, max_width=10000) # type: ignore
@@ -345,13 +411,15 @@ class Catalog:
             if len(values) < 7:
                 continue
             record = CatalogRecord(
-                file_id=values[0],
-                total_count=int(values[1]),
-                unique_count=int(values[2]),
-                max_length=int(values[3]),
-                predicate=values[4],
-                selectivity_list=json.loads(values[5]),
-                query_candidates=json.loads(values[6])
+                file=values[0],
+                table=values[1],
+                column=values[2],
+                total_count=int(values[3]),
+                unique_count=int(values[4]),
+                max_length=int(values[5]),
+                predicate=values[6],
+                selectivity_list=[float(x) for x in json.loads(values[7])],
+                query_candidates=[(float(x), y) for x, y in json.loads(values[8])]
             )
             records.append(record)
         return cls(records, path=path)
@@ -374,7 +442,8 @@ def get_mssb_catalog(path: str = "mssb_data") -> Catalog:
 MSSB_DataGenArgs = namedtuple('MSSB_DataGenArgs', ['total_count', 'unique_count', 'max_length', 'predicate', 'selectivity_list', 'unit_test'])
 
 # Initialize with default values
-specified_args = MSSB_DataGenArgs(100, 10, 20, "equal", [0.1, 0.3, 0.5], False)
+# specified_args = MSSB_DataGenArgs(100, 10, 20, "equal", [0.1, 0.3, 0.5], False)
+specified_args = MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.3], True)
 # specified_args = None
 
 def main():

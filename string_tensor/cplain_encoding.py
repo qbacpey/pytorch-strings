@@ -4,9 +4,9 @@ from .plain_encoding import PlainEncodingStringColumnTensor
 class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
     encoded_tensor_transpose: torch.Tensor
 
-    def __init__(self, encoded_tensor=torch.empty(0, dtype=torch.uint8)):
+    def __init__(self, encoded_tensor=torch.empty(0, dtype=torch.uint8), encoded_tensor_transpose=None):
         super().__init__(encoded_tensor=encoded_tensor)
-        self.encoded_tensor_transpose = encoded_tensor.t()
+        self.encoded_tensor_transpose = encoded_tensor.t() if encoded_tensor_transpose is None else encoded_tensor_transpose
 
     def __repr__(self) -> str:
         return f"CPlainEncodingStringColumnTensor(max_length={self.max_length}, encoded_tensor_shape={self.encoded_tensor_transpose.__len__})"

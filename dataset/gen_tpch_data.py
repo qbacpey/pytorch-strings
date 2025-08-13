@@ -3,19 +3,37 @@ from contextlib import redirect_stdout
 import gc
 import json
 import os
+from typing import cast
 import duckdb, duckdb.typing
-import numpy as np
+import torch
+
+from string_tensor import *
+from dataset import StringColumnMetadata, StringTensorDict, StringTensorData
 
 def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRelation, out_path: str):
-    file_id = f"{table_name}.{col_name}.npy"
-    file_path = os.path.join(out_path, file_id)
+    file_name = f"{table_name}.{col_name}.pt"
+    file_path = os.path.join(out_path, file_name)
     # Save string columns to file first (avoid loading everything into memory later)
     if not os.path.exists(file_path):
         print(f"Saving column {table_name}.{col_name} ...")
         col_data = table.select(col_name).fetchnumpy()[col_name]
-        np.save(file_path, col_data)
+        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
+            cplain = CPlainEncodingStringColumnTensor.from_strings(col_data)
+            cdict = CDictionaryEncodingStringColumnTensor.from_string_tensor(cplain)
+            unsorted_cdict = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(cplain)
+
+        if len(col_data) <= 1000_000:
+            tensors = [col_data.tolist(), cplain, cdict, unsorted_cdict]
+        else:
+            tensors = [cplain, cdict, unsorted_cdict]
+        data = cast(StringTensorDict, {tensor.__class__.__name__: tensor for tensor in tensors})
+
+        torch.save(data, file_path)
         print(f"Saved to {file_path}")
         del col_data
+        del cplain
+        del cdict
+        del unsorted_cdict
         gc.collect()
     else:
         print(f"File {file_path} exists, skipping saving of {table_name}.{col_name}")
@@ -49,26 +67,31 @@ def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRel
                 continue
             # Execute query and calculate selectivity
             measured_sel = cnt / total_count if total_count > 0 else 0
-            measured_sel = f"{measured_sel:.3g}"
             sel_list.append(measured_sel)
             sel_queries.append((measured_sel, query_str))
         # Construct current record
-        record = CatalogRecord(file_id, table_name, col_name, total_count, unique_count, max_length, predicate, sel_list, sel_queries)
+        record = CatalogRecord(file_name, table_name, col_name, total_count, unique_count, max_length, predicate, sel_list, sel_queries)
         catalog_records.append(record)
 
     return catalog_records
 
-def generate_and_save_tpch_data(scale: float, path: str = "tpch_data"):
+def generate_and_save_tpch_data(scale: float, cols: list[str] | set[str], path: str = "tpch_data"):
+    if isinstance(cols, list):
+        cols = set(cols)
+
     db_path = os.path.join(path, "tmp.db")
-    out_path = os.path.join(path, f"sf-{scale}")
+    out_path = os.path.join(path, f"sf-{scale:.8g}")
     os.makedirs(out_path, exist_ok=True)
-    
+
     catalog_file = os.path.join(out_path, "catalog.txt")
-    if os.path.exists(catalog_file):
+    if (os.path.exists(catalog_file) and
+        (catalog := Catalog.load(out_path)) and
+        (catalog_cols := {r.column for r in catalog.records}) and
+        (cols <= catalog_cols)):
         print(f"Catalog file {catalog_file} already exists, skipping generation.")
         return
 
-    print(f"Loading TPCH data with scale factor {scale}...")
+    print(f"Saving TPCH data with scale factor {scale:.8g}...")
 
     with duckdb.connect(db_path) as con:
         # Predefined TPCH data table names
@@ -79,55 +102,57 @@ def generate_and_save_tpch_data(scale: float, path: str = "tpch_data"):
             con.execute(f"DROP TABLE IF EXISTS {table_name}")
 
         # Install and load TPCH extension, generate data
-        con.execute(f"INSTALL tpch; LOAD tpch; CALL dbgen(sf = {scale});")
+        con.execute(f"INSTALL tpch; LOAD tpch; CALL dbgen(sf = {scale:.8g});")
 
         catalog_records = [record
             for table_name in tables
             if (table := con.table(table_name))
             for col_name, col_type in zip(table.columns, table.types)
-            if col_type == duckdb.typing.VARCHAR
+            if (col_type == duckdb.typing.VARCHAR and
+                col_name in cols)
             for record in generate_tpch_data(table_name, col_name, table, out_path)
         ]
 
     catalog = Catalog(catalog_records, out_path)
     catalog.save()
 
-class CatalogRecord:
-    def __init__(self, file_id: str, table: str, column: str, total_count: int, 
-                 unique_count: int, max_length: int, predicate: str, 
-                 selectivity_list: list[str], query_candidates: list[tuple[str, str]]):
-        self.file_id = file_id
-        self.table = table
-        self.column = column
-        self.total_count = total_count
-        self.unique_count = unique_count
-        self.max_length = max_length
-        self.predicate = predicate
-        self.selectivity_list = selectivity_list
-        self.query_candidates = query_candidates
+class CatalogRecord(StringColumnMetadata):
+    pass
 
 class Catalog:
     def __init__(self, records: list[CatalogRecord], path: str):
         self.path = path
         self.records = records
-    
-    def get_col_file(self, col_name: str) -> str:
+
+    def get_col_record(self, col_name: str) -> CatalogRecord | None:
         for record in self.records:
             if record.column == col_name:
-                return os.path.join(self.path, record.file_id)
+                return record
+        return None
+
+    def get_col_data(self, col_name: str, device: str) -> StringTensorData:
+        for record in self.records:
+            if record.column == col_name:
+                file_name = os.path.join(self.path, record.file)
+                data: StringTensorDict = torch.load(file_name, map_location=device)
+                data["DictionaryEncodingStringColumnTensor"] = data["CDictionaryEncodingStringColumnTensor"].to_string_tensor(DictionaryEncodingStringColumnTensor)
+                data["PlainEncodingStringColumnTensor"] = data["CPlainEncodingStringColumnTensor"].to_string_tensor(PlainEncodingStringColumnTensor)
+                data["UnsortedDictionaryEncodingStringColumnTensor"] = data["UnsortedCDictionaryEncodingStringColumnTensor"].to_string_tensor(UnsortedDictionaryEncodingStringColumnTensor)
+                return StringTensorData(record, data)
         raise ValueError(f"Column {col_name} not found in catalog.")
     
     def save(self):
         # Write to catalog.txt (output all records in tabular format)
         catalog_file = os.path.join(self.path, "catalog.txt")
         with duckdb.connect(":memory:") as con:
-            con.execute("CREATE TABLE catalog (file_id VARCHAR, table_name VARCHAR, column_name VARCHAR, total_count INTEGER, unique_count INTEGER, max_length INTEGER, predicate VARCHAR, selectivity_list JSON, query_candidates JSON)")
+            con.execute("CREATE TABLE catalog (file_name VARCHAR, table_name VARCHAR, column_name VARCHAR, total_count INTEGER, unique_count INTEGER, max_length INTEGER, predicate VARCHAR, selectivity_list JSON, query_candidates JSON)")
             for rec in self.records:
                 con.execute(
                     "INSERT INTO catalog VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (rec.file_id, rec.table, rec.column, rec.total_count, rec.unique_count,
-                     rec.max_length, rec.predicate,
-                     json.dumps(rec.selectivity_list), json.dumps(rec.query_candidates))
+                    (rec.file, rec.table, rec.column, rec.total_count, rec.unique_count,
+                    rec.max_length, rec.predicate,
+                    json.dumps([format(x, ".3g") for x in rec.selectivity_list]),
+                    json.dumps([(format(x, ".3g"), y) for x, y in rec.query_candidates]))
                 )
             with open(catalog_file, "w", encoding="utf-8") as f, redirect_stdout(f):
                 con.table("catalog").show(max_rows=10000, max_width=10000) # type: ignore
@@ -145,21 +170,21 @@ class Catalog:
         with open(catalog_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        records = []        
+        records = []
         for line in lines[4:]:  # Skip header and separator lines
             values = [part.strip() for part in line.split("│")][1:-1]  # Remove leading/trailing whitespace and empty parts
             if len(values) < 9:
                 continue
             record = CatalogRecord(
-                file_id=values[0],
+                file=values[0],
                 table=values[1],
                 column=values[2],
                 total_count=int(values[3]),
                 unique_count=int(values[4]),
                 max_length=int(values[5]),
                 predicate=values[6],
-                selectivity_list=json.loads(values[7]),
-                query_candidates=json.loads(values[8])
+                selectivity_list=[float(x) for x in json.loads(values[7])],
+                query_candidates=[(float(x), y) for x, y in json.loads(values[8])]
             )
             records.append(record)
         return cls(records, path=path)
@@ -170,7 +195,7 @@ def get_tpch_catalog(scale: float = 1.0, path: str = "tpch_data") -> Catalog:
     :param scale: data scale factor
     :return: catalog information list
     """
-    path = os.path.join(path, f"sf-{scale}")
+    path = os.path.join(path, f"sf-{scale:.8g}")
     catalog_file = os.path.join(path, "catalog.txt")
 
     if not os.path.exists(catalog_file):

@@ -89,11 +89,11 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
         return self.encoded_tensor
     
     @classmethod
-    def from_tensor(cls, encoded_tensor: torch.Tensor) -> Self:
-        return cls(encoded_tensor)
+    def from_tensor(cls, tensor: torch.Tensor) -> Self:
+        return cls(tensor)
 
     @classmethod
-    def from_strings(cls, strings: List[str]) -> Self:
+    def from_strings(cls, strings: List[str] | np.ndarray) -> Self:
         max_length = max(len(s) for s in strings)
         batch_size = len(strings)
         arr = np.zeros((batch_size, max_length), dtype=np.uint8)
