@@ -7,39 +7,40 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
     encoded_tensor: torch.Tensor
     max_length: int
 
-    def __init__(self, encoded_tensor=torch.empty(0, dtype=torch.uint8)):
+    def __init__(self, encoded_tensor: torch.Tensor):
         self.encoded_tensor = encoded_tensor
         if encoded_tensor.dim() != 2 or encoded_tensor.dtype != torch.uint8:
             raise ValueError("encoded_tensor must be a 2D tensor of type torch.uint8")
         self.max_length = encoded_tensor.size(1)
-        
+
     def tuple_size(self) -> int:
         """
         Return the size of the tuple representing each string in bytes.
-        
+
         Returns:
             int: The size of the tuple for each string.
         """
         return self.encoded_tensor.element_size() * self.max_length
-    
+
     def tuple_counts(self) -> int:
         """
         Return the number of tuples in the encoded tensor.
-        
+
         Returns:
             int: The number of tuples in the encoded tensor.
         """
         return self.encoded_tensor.numel() // self.max_length
-        
+
     def __repr__(self) -> str:
         return f"PlainEncodingStringColumnTensor(max_length={self.max_length}, encoded_tensor_shape={self.encoded_tensor.shape})"
-    
+
     def query_equals(self, query: str) -> torch.Tensor:
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
         query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
 
         eq_mask = (self.encoded_tensor == query_tensor)
         match_mask = eq_mask.all(dim=1)
+        del eq_mask  # Free memory
         match_index = match_mask.nonzero().view(-1)
         return match_index
 
@@ -50,7 +51,8 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
 
         ne_mask = self.encoded_tensor != query_tensor
         # Find the first position where they differ, or the very first position if they are equal
-        first_ne_index = ne_mask.int().argmax(dim=1)
+        first_ne_index = ne_mask.byte().argmax(dim=1)
+        del ne_mask  # Free memory
 
         first_ne_tensor = self.encoded_tensor[torch.arange(len(self)), first_ne_index]
         # Get whether the first differing position is less than the query, or must be false if they are equal
@@ -58,36 +60,37 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
         lt_index = lt_mask.nonzero().view(-1)
 
         return lt_index
-    
+
     def query_prefix(self, prefix: str) -> torch.Tensor:
         prefix_len = len(prefix)
         prefix_tensor = torch.tensor(list(bytes(prefix, "ascii")), dtype=torch.uint8)
 
         prefix_eq_mask = (self.encoded_tensor[:, :prefix_len] == prefix_tensor)
         match_mask = prefix_eq_mask.all(dim=1)
+        del prefix_eq_mask  # Free memory
         match_index = match_mask.nonzero().view(-1)
         return match_index
-    
+
     def query_aggregate(self) -> torch.Tensor:
         _, inverse_indices = torch.unique(self.encoded_tensor, dim=0, return_inverse=True)
         return inverse_indices
-    
+
     def query_sort(self, ascending: bool = True) -> torch.Tensor:
         _, inverse_indices = torch.unique(self.encoded_tensor, dim=0, return_inverse=True)
         sorted_indices = torch.argsort(inverse_indices, descending=not ascending)
         return sorted_indices
-    
+
     def index_select(self, *indices: Any) -> Self:
         return self.__class__(
             encoded_tensor=self.encoded_tensor[indices]
         )
-    
+
     def __len__(self) -> int:
         return len(self.encoded_tensor)
-    
+
     def tensor(self) -> torch.Tensor:
         return self.encoded_tensor
-    
+
     @classmethod
     def from_tensor(cls, tensor: torch.Tensor) -> Self:
         return cls(tensor)

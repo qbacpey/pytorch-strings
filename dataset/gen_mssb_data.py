@@ -12,7 +12,7 @@ from collections import namedtuple
 from typing import TYPE_CHECKING
 
 from string_tensor import *
-from dataset import StringColumnMetadata, StringTensorDict, StringTensorData
+from dataset import StringColumnMetadata, StringTensorDict
 
 def generate_mssb_data(total_count, unique_count, max_length, predicate: Optional[str] = None, selectivity_list: Optional[list[float]] = None) -> tuple[StringTensorDict, list[tuple[float, str]]]:
     """
@@ -56,7 +56,9 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
 
     def sample(unique_strs: list[str], weights: np.ndarray, total_count: int) -> StringTensorDict:
         """Sample from unique_strs according to weights to generate total_count data."""
-        data = []
+        if total_count >= 2 ** 31:
+            raise ValueError("Cannot generate more than 2^31 elements.")
+
         counts = ((total_count - len(unique_strs)) * weights // weights.sum()).astype(int) + 1
         if counts.sum() < total_count:
             extra = total_count - counts.sum()
@@ -64,38 +66,37 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             counts[:(extra % len(counts)).astype(int)] += 1
 
         with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
-            src = PlainEncodingStringColumnTensor.from_strings(unique_strs).tensor()
-            src = torch.unique(src, dim=0, return_inverse=False)
-            src_t = src.t()
+            perm = torch.randperm(total_count, dtype=torch.int32).to(torch.int64) # requires 10x temporary space, so put first to ensure no other allocation happens before
+
+            src = PlainEncodingStringColumnTensor.from_strings(unique_strs)
+            src = PlainEncodingStringColumnTensor.from_tensor(src.tensor().unique(dim=0, return_inverse=False))
 
             counts = torch.tensor(counts)
             idxs = torch.arange(len(src))
             idxs = torch.repeat_interleave(idxs, counts) # repeat each index according to its count
-            idxs = idxs[torch.randperm(len(idxs))]  # shuffle the indices and we get the final distributed indices, also the encoded_tensor in dictionary encoding
+            idxs = idxs[perm]  # shuffle the indices and we get the final distributed indices, also the encoded_tensor in dictionary encoding
+            # del perm
 
-            # construct each StringColumnTensor based on src and enc
-            plain = src[idxs]
-            plain_t = src_t[:, idxs]
-            cplain_tensor = CPlainEncodingStringColumnTensor(plain, plain_t)
+            # # construct each StringColumnTensor based on src and idxs
+            # plain = (PlainEncodingStringColumnTensor(src.tensor()[idxs].to("cpu")) if total_count > 1000_000 else
+            #         PlainEncodingStringColumnTensor(src.tensor()[idxs]))
+            # cplain = (CPlainEncodingStringColumnTensor(None, src.tensor().t()[:, idxs].to("cpu")) if total_count > 1000_000 else
+            #         CPlainEncodingStringColumnTensor(None, src.tensor().t()[:, idxs]))
 
-            csrc = CPlainEncodingStringColumnTensor(src, src_t)
-            cdict_tensor = CDictionaryEncodingStringColumnTensor(csrc, idxs)
+            dict = DictionaryEncodingStringColumnTensor(src, idxs)
+            # udict = UnsortedDictionaryEncodingStringColumnTensor(src, idxs).shuffle()
 
-            perm = torch.randperm(len(src), generator=torch.Generator(src.device).manual_seed(42))
-            perm_inv = perm.argsort()
-            src_shuf = src[perm_inv]
-            src_shuf_t = src_t[:, perm_inv]
-            enc_remap = perm[idxs]
-            csrc_shuf = CPlainEncodingStringColumnTensor(src_shuf, src_shuf_t)
-            unsorted_cdict_tensor = UnsortedCDictionaryEncodingStringColumnTensor(csrc_shuf, enc_remap)
+            # src = CPlainEncodingStringColumnTensor(src.tensor())
+            # cdict = CDictionaryEncodingStringColumnTensor(src, idxs)
+            # ucdict = UnsortedCDictionaryEncodingStringColumnTensor(src, idxs).shuffle()
 
         final_indices = idxs.tolist() if total_count <= 1000_000 else []
         strs = [uniq_strs[i] for i in final_indices]
-        tensors = [strs, cplain_tensor, cdict_tensor, unsorted_cdict_tensor]
+        tensors = [strs, dict]
 
         return cast(StringTensorDict, {tensor.__class__.__name__: tensor for tensor in tensors})
 
-    print(f"Generating MSSB data: total_count={total_count}, unique_count={unique_count}, max_length={max_length}, ")
+    print(f"Generating MSSB data: total_count={total_count}, unique_count={unique_count}, max_length={max_length}, predicate={predicate}, selectivity_list={selectivity_list}")
 
     # ===================================================
     # If no predicate is specified, use the simplest generation logic:
@@ -307,29 +308,26 @@ def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate
     if data["list"]:
         with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
             strs = data["list"]
-            cplain = data["CPlainEncodingStringColumnTensor"]
-            cdict = data["CDictionaryEncodingStringColumnTensor"]
-            unsorted_cdict = data["UnsortedCDictionaryEncodingStringColumnTensor"]
+            # plain = data["PlainEncodingStringColumnTensor"]
+            dict = data["DictionaryEncodingStringColumnTensor"]
+            # udict = data["UnsortedDictionaryEncodingStringColumnTensor"]
 
-            cplain_expected = CPlainEncodingStringColumnTensor.from_strings(strs)
-            cdict_expected = CDictionaryEncodingStringColumnTensor.from_string_tensor(cplain_expected)
-            unsorted_cdict_expected = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(cplain_expected)
+            # plain_expected = PlainEncodingStringColumnTensor.from_strings(strs)
+            dict_expected = DictionaryEncodingStringColumnTensor.from_strings(strs)
+            # udict_expected = UnsortedDictionaryEncodingStringColumnTensor.from_string_tensor(plain_expected)
 
-            assert (cplain.encoded_tensor.equal(cplain_expected.encoded_tensor) and 
-                cplain.encoded_tensor_transpose.equal(cplain_expected.encoded_tensor_transpose)
-            ), "CPlainEncodingStringColumnTensor does not match expected."
-            assert (cdict.encoded_tensor.equal(cdict_expected.encoded_tensor) and
-                cdict.dictionary.encoded_tensor.equal(cdict_expected.dictionary.encoded_tensor) and
-                cast(CPlainEncodingStringColumnTensor, cdict.dictionary).encoded_tensor_transpose.equal(
-                    cast(CPlainEncodingStringColumnTensor, cdict.dictionary).encoded_tensor_transpose
-                )
+            # assert (
+            #     plain.tensor().equal(plain_expected.encoded_tensor)
+            # ), "CPlainEncodingStringColumnTensor does not match expected."
+            assert (
+                dict.encoded_tensor.equal(dict_expected.encoded_tensor) and
+                dict.dictionary.tensor().equal(dict_expected.dictionary.tensor())
             ), "CDictionaryEncodingStringColumnTensor does not match expected."
-            assert (unsorted_cdict.encoded_tensor.equal(unsorted_cdict_expected.encoded_tensor) and
-                unsorted_cdict.dictionary.encoded_tensor.equal(unsorted_cdict_expected.dictionary.encoded_tensor) and
-                cast(CPlainEncodingStringColumnTensor, unsorted_cdict.dictionary).encoded_tensor_transpose.equal(
-                    cast(CPlainEncodingStringColumnTensor, unsorted_cdict.dictionary).encoded_tensor_transpose
-                )
-            ), "UnsortedCDictionaryEncodingStringColumnTensor does not match expected."
+            # assert (
+            #     udict.encoded_tensor.equal(udict_expected.encoded_tensor) and
+            #     udict.dictionary.encoded_tensor.equal(udict_expected.dictionary.encoded_tensor)
+            # ), "UnsortedCDictionaryEncodingStringColumnTensor does not match expected."
+    
 
     # Determine new File ID (sequentially incrementing, like 0001,0002,...)
     if catalog.records:
@@ -365,15 +363,12 @@ class Catalog:
                 return rec
         return None
 
-    def get_col_data(self, col_name: str, device: str) -> StringTensorData:
+    def get_col_data(self, col_name: str) -> StringTensorDict:
         for record in self.records:
             if record.column == col_name:
                 file_name = os.path.join(self.path, record.file)
-                data: StringTensorDict = torch.load(file_name, map_location=device)
-                data["DictionaryEncodingStringColumnTensor"] = data["CDictionaryEncodingStringColumnTensor"].to_string_tensor(DictionaryEncodingStringColumnTensor)
-                data["PlainEncodingStringColumnTensor"] = data["CPlainEncodingStringColumnTensor"].to_string_tensor(PlainEncodingStringColumnTensor)
-                data["UnsortedDictionaryEncodingStringColumnTensor"] = data["UnsortedCDictionaryEncodingStringColumnTensor"].to_string_tensor(UnsortedDictionaryEncodingStringColumnTensor)
-                return StringTensorData(record, data)
+                data: StringTensorDict = torch.load(file_name, map_location="cpu")
+                return data
         raise ValueError(f"Column {col_name} not found in catalog.")
 
     def save(self):

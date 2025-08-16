@@ -3,7 +3,7 @@ import pytest
 import contextlib
 import time
 from pytest_benchmark.plugin import BenchmarkFixture, BenchmarkSession
-from itertools import chain, product
+from itertools import product
 
 from string_tensor import *
 from mock_operator import *
@@ -99,35 +99,33 @@ class StringTensorTestContext(NamedTuple):
     expected: torch.Tensor | None
 
 @pytest.fixture(scope="class")
-def tpch_context(col: str, scale: float, predicate: str,device: str) -> StringTensorTestContext:
+def tpch_context(col: str, scale: float, predicate: str) -> StringTensorTestContext:
     gen_tpch_col(scale, tpch_col_gen[scale], "dataset/tpch_data")
-    meta, tensors = load_tpch_col(col, scale, device)
+    meta, tensors = load_tpch_col(col, scale)
 
     query = meta.query_candidates[0][1]
     pred = MockPredicate[predicate](query)
     op = FilterScan(meta.column, pred)
 
     if meta.total_count <= 1000_000 and (strs := tensors["list"]):
-        with torch.device(device):
-            expected = op.apply(MockStringColumnTensor(strs))
+        expected = op.apply(MockStringColumnTensor(strs))
     else:
         expected = None
 
     return StringTensorTestContext(meta, tensors, op, expected)
 
 @pytest.fixture(scope="class")
-def mssb_context(total_count, unique_count, max_length, predicate, selectivity, device) -> StringTensorTestContext:
+def mssb_context(total_count, unique_count, max_length, predicate, selectivity) -> StringTensorTestContext:
 
     gen_mssb_col(total_count, unique_count, max_length, predicate, [selectivity], "dataset/mssb_data")
-    meta, tensors = load_mssb_col(total_count, unique_count, max_length, predicate, [selectivity], device)
+    meta, tensors = load_mssb_col(total_count, unique_count, max_length, predicate, [selectivity])
 
     query = next(q for s, q in meta.query_candidates if s == selectivity)
     pred = MockPredicate[predicate](query)
     op = FilterScan(meta.column, pred)
 
     if meta.total_count <= 1000_000 and (strs := tensors["list"]):
-        with torch.device(device):
-            expected = op.apply(MockStringColumnTensor(strs))
+        expected = op.apply(MockStringColumnTensor(strs))
     else:
         expected = None
 
@@ -168,16 +166,22 @@ def make_benchmark(request):
     for benchmark in benchmarks:
         benchmark._cleanup()
 
-def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, encoder: type[StringColumnTensor], device: str):
+def torch_timer() -> float:
+    if torch.empty(()).device.type == "cuda":
+        torch.cuda.synchronize()
+    return time.perf_counter()
+
+def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, tensor_cls: type[StringColumnTensor], device: str):
     if device == "cuda":
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
 
     with torch.device(device):
         _, tensors, op, expected = ctx
-        tensor = tensors[encoder.__name__]
+        tensor = transfer_col(tensors[tensor_cls.__name__], device)
+        result = benchmark(op.apply, tensor)
+
         tuple_count = len(tensor)
-        result = op.apply(tensor)
         query_result_size = len(result)
         tuple_element_size = tensor.tuple_size()
         total_size = tuple_count * tuple_element_size
@@ -196,13 +200,8 @@ def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext,
         benchmark.extra_info["tuple_element_size_bytes"] = tuple_element_size
         benchmark.extra_info["total_size_bytes"] = total_size
 
-        benchmark(lambda: (
-            op.apply(tensor),
-            torch.cuda.synchronize() if device == "cuda" else None
-        ))
-
         if expected is not None:
-            assert torch.equal(expected, result), f"{encoder.__name__} did not produce expected results."
+            assert torch.equal(expected.to(result.device), result), f"{tensor_cls.__name__} did not produce expected results."
 
 @contextlib.contextmanager
 def wrap_query_methods(target_cls, predicates: list[str], benchmark: BenchmarkFixture, stage1_benchmark: BenchmarkFixture, stage2_benchmark: BenchmarkFixture):
@@ -262,7 +261,8 @@ def mssb_param_id(params: tuple[type[StringColumnTensor], int, int, int, str, fl
 
 @pytest.mark.benchmark(
     warmup=True,
-    warmup_iterations=3
+    warmup_iterations=3,
+    timer=torch_timer,
 )
 class TestStringColumnTensor:
 
@@ -273,7 +273,6 @@ class TestStringColumnTensor:
         # benchmark.group += f" | FilterScan(l_shipmode==AIR)"
         # benchmark.group += f" | scale-{scale}"
         benchmark.group += f" | {group}" if group else ""
-        benchmark.extra_info["group"] = group
         string_processing(benchmark, tpch_context, tensor_cls, device)
 
     @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
@@ -281,7 +280,6 @@ class TestStringColumnTensor:
     def test_mssb_string_processing(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
         print(f"Testing string query processing with {tensor_cls.__name__} on device {device}...")
         benchmark.group += f" | {group}" if group else ""
-        benchmark.extra_info["group"] = group
         string_processing(benchmark, mssb_context, tensor_cls, device)
 
     @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
