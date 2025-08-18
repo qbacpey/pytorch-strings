@@ -5,7 +5,9 @@ import pytest_benchmark.csv
 
 # hooks need to be placed in a special file named conftest.py for pytest to discover and execute them.
 def pytest_addoption(parser: pytest.Parser):
-    parser.addoption("--csv", action="store", default=None, help="Path to output CSV file")
+    parser.addoption("--benchmark-csv", "--csv", action="store", default=None, help="Path to output CSV file")
+    parser.addoption("--torch-profile", action="store_true", default=False, help="Enable PyTorch profiling")
+    parser.addoption("--toy-trace", action="store_true", default=False, help="Enable toy tracing")
 
 def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_benchmark.stats.Metadata], output_json: dict) -> None:
     benchmarks_dict: list[dict] = output_json["benchmarks"]
@@ -14,7 +16,7 @@ def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_
             bench["params"]["operators"] = str(bench["params"]["operators"])
         if "tensor_cls" in bench["params"] and isinstance(bench["params"]["tensor_cls"], type):
             bench["params"]["tensor_cls"] = bench["params"]["tensor_cls"].__name__.replace("StringColumnTensor", "")
-    
+
     # Flatten the stats and extra_info in the benchmarks, only to be used for CSV output but not for JSON output
     benchmarks_dict = benchmarks_dict.copy()
     for bench in benchmarks_dict:
@@ -31,8 +33,8 @@ def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_
     # see pytest_benchmark/plugin.py add_display_options --group_by
     group_by = 'group'
     # set output file name here
-    csv_file = config.getoption("csv") or "results.csv"
-    print(f"[Benchmark] Writing CSV results to: {csv_file}")
+    csv_file = config.getoption("benchmark_csv") or "results.csv"
+    print(f"[Benchmark] Writing Benchmark CSV results to: {csv_file}")
 
     results_csv = pytest_benchmark.csv.CSVResults(extra_fields + stats_fields, sort_by_field, config._benchmarksession.logger) # type: ignore
     groups = config.hook.pytest_benchmark_group_stats(

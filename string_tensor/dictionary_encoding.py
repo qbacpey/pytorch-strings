@@ -13,13 +13,13 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
     def __init__(self, dictionary: PlainEncodingStringColumnTensor, encoded_tensor: torch.Tensor):
         self.dictionary = dictionary
         self.encoded_tensor = encoded_tensor
-        
+
     def __repr__(self) -> str:        return (
             f"DictionaryEncodingStringColumnTensor("
             f"dictionary_size={len(self.dictionary)}, "
             f"encoded_tensor_shape={self.encoded_tensor.shape})"
         )
-    
+
     def tuple_size(self) -> int:
         tuple_size = self.encoded_tensor.element_size()
         # Print the shape of the encoded tensor for debugging
@@ -29,7 +29,7 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         # print(f"Size of one element: {self.encoded_tensor.element_size()} bytes")
         # print(f"Total memory size (in bytes): {total_bytes}")
         return tuple_size
-    
+
     def tuple_counts(self) -> int:
         """
         Return the number of tuples in the encoded tensor.
@@ -42,7 +42,7 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
     def query_equals(self, query: str) -> torch.Tensor:
         codes = self.dictionary.query_equals(query)
         return self.query_equals_codes(codes)
-    
+
     def query_equals_codes(self, codes: torch.Tensor) -> torch.Tensor:
         if len(codes) > 0:
             # If found in dictionary, get index and check against encoded tensor
@@ -55,7 +55,7 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
     def query_less_than(self, query: str) -> torch.Tensor:
         lt_codes = self.dictionary.query_less_than(query)
         return self.query_less_than_codes(lt_codes)
-    
+
     def query_less_than_codes(self, lt_codes: torch.Tensor) -> torch.Tensor:
         if len(lt_codes) > 0:
             max_code = lt_codes[-1]
@@ -74,11 +74,10 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
             matches = (self.encoded_tensor >= min_code) & (self.encoded_tensor <= max_code)
             return matches.nonzero().view(-1)
         return torch.empty(0, dtype=torch.long)
-        
-    
+
     def query_aggregate(self) -> torch.Tensor:
         return self.encoded_tensor
-    
+
     def query_sort(self, ascending: bool = True) -> torch.Tensor:
         return torch.argsort(self.encoded_tensor, descending=not ascending)
 
@@ -87,13 +86,13 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         Return encoder configuration for benchmarking/reporting.
         """
         return {"type": "DictionaryEncoder"}
-    
+
     def index_select(self, *indices: Any) -> Self:
         return self.__class__(
             dictionary=self.dictionary,
             encoded_tensor=self.encoded_tensor[indices]
         )
-    
+
     def __len__(self) -> int:
         return len(self.encoded_tensor)
 
@@ -127,13 +126,13 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
             case PlainEncodingStringColumnTensor():
                 return cls.from_tensor(string_tensor.tensor())
             case DictionaryEncodingStringColumnTensor():
-                return cls(PlainEncodingStringColumnTensor.from_string_tensor(string_tensor.dictionary), string_tensor.encoded_tensor)
+                return cls(cls.dictionary_cls.from_string_tensor(string_tensor.dictionary), string_tensor.encoded_tensor)
             case _:
                 raise TypeError(
                     f"Unsupported type for DictionaryEncodingStringColumnTensor.from_string_tensor: {type(string_tensor)}. "
                     "Expected PlainEncodingStringColumnTensor or DictionaryEncodingStringColumnTensor."
                 )
-        return cls.from_tensor(string_tensor.tensor())
+
 
 class CDictionaryEncodingStringColumnTensor(DictionaryEncodingStringColumnTensor):
     dictionary_cls = CPlainEncodingStringColumnTensor

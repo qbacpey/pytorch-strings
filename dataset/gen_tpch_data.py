@@ -8,7 +8,7 @@ import duckdb, duckdb.typing
 import torch
 
 from string_tensor import *
-from dataset import StringColumnMetadata, StringTensorDict, StringTensorData
+from dataset import StringColumnMetadata, StringTensorDict
 
 def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRelation, out_path: str):
     file_name = f"{table_name}.{col_name}.pt"
@@ -17,23 +17,23 @@ def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRel
     if not os.path.exists(file_path):
         print(f"Saving column {table_name}.{col_name} ...")
         col_data = table.select(col_name).fetchnumpy()[col_name]
-        with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
-            cplain = CPlainEncodingStringColumnTensor.from_strings(col_data)
-            cdict = CDictionaryEncodingStringColumnTensor.from_string_tensor(cplain)
-            unsorted_cdict = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(cplain)
+        with torch.device("cuda" if torch.cuda.is_available()  else "cpu"):
+            plain = PlainEncodingStringColumnTensor.from_strings(col_data)
+            # cplain = CPlainEncodingStringColumnTensor.from_string_tensor(plain)
+            dict = DictionaryEncodingStringColumnTensor.from_string_tensor(plain)
+            # cdict = CDictionaryEncodingStringColumnTensor.from_string_tensor(dict)
+            # udict = UnsortedDictionaryEncodingStringColumnTensor.from_string_tensor(dict)
+            # ucdict = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(dict)
 
+        tensors = [dict]
         if len(col_data) <= 1000_000:
-            tensors = [col_data.tolist(), cplain, cdict, unsorted_cdict]
-        else:
-            tensors = [cplain, cdict, unsorted_cdict]
+            tensors = [col_data.tolist(), *tensors]
         data = cast(StringTensorDict, {tensor.__class__.__name__: tensor for tensor in tensors})
 
         torch.save(data, file_path)
         print(f"Saved to {file_path}")
-        del col_data
-        del cplain
-        del cdict
-        del unsorted_cdict
+        for tensor in tensors:
+            del tensor
         gc.collect()
     else:
         print(f"File {file_path} exists, skipping saving of {table_name}.{col_name}")
@@ -130,17 +130,14 @@ class Catalog:
                 return record
         return None
 
-    def get_col_data(self, col_name: str, device: str) -> StringTensorData:
+    def get_col_data(self, col_name: str) -> StringTensorDict:
         for record in self.records:
             if record.column == col_name:
                 file_name = os.path.join(self.path, record.file)
-                data: StringTensorDict = torch.load(file_name, map_location=device)
-                data["DictionaryEncodingStringColumnTensor"] = data["CDictionaryEncodingStringColumnTensor"].to_string_tensor(DictionaryEncodingStringColumnTensor)
-                data["PlainEncodingStringColumnTensor"] = data["CPlainEncodingStringColumnTensor"].to_string_tensor(PlainEncodingStringColumnTensor)
-                data["UnsortedDictionaryEncodingStringColumnTensor"] = data["UnsortedCDictionaryEncodingStringColumnTensor"].to_string_tensor(UnsortedDictionaryEncodingStringColumnTensor)
-                return StringTensorData(record, data)
+                data: StringTensorDict = torch.load(file_name, map_location="cpu")
+                return data
         raise ValueError(f"Column {col_name} not found in catalog.")
-    
+
     def save(self):
         # Write to catalog.txt (output all records in tabular format)
         catalog_file = os.path.join(self.path, "catalog.txt")
