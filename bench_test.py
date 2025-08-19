@@ -370,6 +370,8 @@ class TestStringColumnTensor:
 
     @pytest.mark.parametrize("tensor_cls,scale,col,predicate,device,group", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
     def test_tpch_string_transfer(self, benchmark, tpch_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, group):
+        if device == "cpu":
+            pytest.skip("Skipping string transfer test on CPU")
         print(f"Testing string tensor transfer with {tensor_cls.__name__} on scale {scale} and device {device}...")
         benchmark.group = "string_tensor_query_processing | TPCH"
         benchmark.group += f" | {group}" if group else ""
@@ -377,6 +379,8 @@ class TestStringColumnTensor:
 
     @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
     def test_mssb_string_transfer(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
+        if device == "cpu":
+            pytest.skip("Skipping string transfer test on CPU")
         print(f"Testing string tensor transfer with {tensor_cls.__name__} on device {device}...")
         benchmark.group = "string_tensor_query_processing | MSSB"
         benchmark.group += f" | {group}" if group else ""
