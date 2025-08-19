@@ -5,6 +5,8 @@ import functools
 import sys
 import torch
 
+from typing import Callable
+
 # Current project root directory
 PROJECT_ROOT = os.path.abspath(".")
 
@@ -121,17 +123,60 @@ def make_cuda_tracer(target_fn_name: str | None = None):
 
     return tracer
 
-def trace(func, tracer):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        old_tracer = sys.gettrace()
-        sys.settrace(tracer)
-        try:
-            return func(*args, **kwargs)
-        finally:
-            sys.settrace(old_tracer)
-    return wrapper
+def trace(tracer):
+    """
+    Decorator factory that applies a sys.settrace tracer to a function.
+    Usage:
+        @trace(my_tracer)
+        def f(): ...
+    """
+    def decorator(func):
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            old_tracer = sys.gettrace()
+            sys.settrace(tracer)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                sys.settrace(old_tracer)
+
+        return wrapper
+
+    return decorator
 
 def cuda_trace(func):
+    """
+    Decorator that applies a torch CUDA tracer to a function.
+    Usage:
+        @cuda_trace
+        def f(): ...
+    """
     tracer = make_cuda_tracer()
-    return trace(func, tracer)
+    return trace(tracer)(func)
+
+def conditional(cond: Callable[..., bool], decorator: Callable[[Callable], Callable] | None = None):
+    """
+    Conditionally applies a decorator to a function.
+
+    Usage:
+        @conditional(cond_fn)
+        @decorator
+        def f(...): ...
+
+        @conditional(cond_fn, decorator)
+        def f(...): ...
+    """
+    def conditional_decorator(func):
+        decorated = decorator(func) if decorator else func
+        raw = func.__wrapped__ if decorator is None else func
+
+        @functools.wraps(func)
+        def conditional_wrapper(*args, **kwargs):
+            if cond(*args, **kwargs):
+                return decorated(*args, **kwargs)
+            return raw(*args, **kwargs)
+
+        return conditional_wrapper
+
+    return conditional_decorator
