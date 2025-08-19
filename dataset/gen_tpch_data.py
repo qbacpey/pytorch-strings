@@ -26,8 +26,7 @@ def generate_tpch_data(table_name: str, col_name: str, table: duckdb.DuckDBPyRel
             # ucdict = UnsortedCDictionaryEncodingStringColumnTensor.from_string_tensor(dict)
 
         tensors = [dict]
-        if len(col_data) <= 1000_000:
-            tensors = [col_data.tolist(), *tensors]
+        tensors = [col_data.tolist() if len(col_data) <= 1000_000 else [], *tensors]
         data = cast(StringTensorDict, {tensor.__class__.__name__: tensor for tensor in tensors})
 
         torch.save(data, file_path)

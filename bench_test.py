@@ -368,12 +368,12 @@ class TestStringColumnTensor:
         stage1_benchmark.stats.extra_info = benchmark.stats.extra_info.copy()
         stage2_benchmark.stats.extra_info = benchmark.stats.extra_info.copy()
 
-    @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
-    def test_tpch_string_transfer(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, group):
+    @pytest.mark.parametrize("tensor_cls,scale,col,predicate,device,group", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
+    def test_tpch_string_transfer(self, benchmark, tpch_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, group):
         print(f"Testing string tensor transfer with {tensor_cls.__name__} on scale {scale} and device {device}...")
         benchmark.group = "string_tensor_query_processing | TPCH"
         benchmark.group += f" | {group}" if group else ""
-        string_transfer(benchmark, mssb_context, tensor_cls, device)
+        string_transfer(benchmark, tpch_context, tensor_cls, device)
 
     @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
     def test_mssb_string_transfer(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
