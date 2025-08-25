@@ -74,23 +74,23 @@ def params_grid_groups(*args):
     ]
 
 tpch_params = params_grid_groups(
-    tensor_cls,
+    tpch_group_name,
     tpch_scale,
     tpch_col,
     tpch_predicate,
     device,
-    tpch_group_name
+    tensor_cls,
 )
 
 mssb_params = params_grid_groups(
-    tensor_cls,
+    mssb_group_name,
     mssb_total_count,
     mssb_unique_count,
     mssb_max_length,
     mssb_predicate,
     mssb_selectivity,
     device,
-    mssb_group_name
+    tensor_cls,
 )
 
 tpch_col_gen = {
@@ -308,26 +308,26 @@ def toy_tracing(request: pytest.FixtureRequest):
         monkeypatch.setenv("TOY_TRACING", str(request.config.getoption("toy_trace")))
         yield
 
-def tpch_param_id(params: tuple[type[StringColumnTensor], float, str, str, str, str]) -> str:
-    tensor_cls, scale, col, predicate, device, _ = params
+def tpch_param_id(params: tuple[str, float, str, str, str, type[StringColumnTensor]]) -> str:
+    _, scale, col, predicate, device, tensor_cls = params
     return "-".join([
-        tensor_cls.__name__.replace("StringColumnTensor", ""),
         f"{scale:.8g}",
         col,
         predicate,
-        device
+        device,
+        tensor_cls.Encoding
     ])
 
-def mssb_param_id(params: tuple[type[StringColumnTensor], int, int, int, str, float, str, str]) -> str:
-    tensor_cls, total_count, unique_count, max_length, predicate, selectivity, device, _ = params
+def mssb_param_id(params: tuple[str, int, int, int, str, float, str, type[StringColumnTensor]]) -> str:
+    _, total_count, unique_count, max_length, predicate, selectivity, device, tensor_cls = params
     return "-".join([
-        tensor_cls.Encoding,
         f"{total_count:.0g}".replace("e+", "e"),
-        f"{unique_count:0g}".replace("e+0", "e"),
+        f"{unique_count:.0g}".replace("e+0", "e"),
         f"{max_length}",
         predicate,
         f"{selectivity:.3g}",
-        device
+        device,
+        tensor_cls.Encoding,
     ])
 
 @pytest.mark.benchmark(
@@ -337,7 +337,7 @@ def mssb_param_id(params: tuple[type[StringColumnTensor], int, int, int, str, fl
 )
 class TestStringColumnTensor:
 
-    @pytest.mark.parametrize("tensor_cls,scale,col,predicate,device,group", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
+    @pytest.mark.parametrize("group,scale,col,predicate,device,tensor_cls", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
     @pytest.mark.usefixtures("torch_profile")
     def test_tpch_string_processing(self, benchmark, tpch_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, group):
         print(f"Testing string query processing with {tensor_cls.__name__} on scale {scale} and device {device}...")
@@ -347,7 +347,7 @@ class TestStringColumnTensor:
         benchmark.group += f" | {group}" if group else ""
         string_processing(benchmark, tpch_context, tensor_cls, device)
 
-    @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
+    @pytest.mark.parametrize("group,total_count,unique_count,max_length,predicate,selectivity,device,tensor_cls", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
     @pytest.mark.usefixtures("torch_profile")
     def test_mssb_string_processing(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
         print(f"Testing string query processing with {tensor_cls.__name__} on device {device}...")
@@ -355,7 +355,7 @@ class TestStringColumnTensor:
         benchmark.group += f" | {group}" if group else ""
         string_processing(benchmark, mssb_context, tensor_cls, device)
 
-    @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
+    @pytest.mark.parametrize("group,total_count,unique_count,max_length,predicate,selectivity,device,tensor_cls", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
     def test_mssb_staged_string_processing(self, make_benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
         if not hasattr(tensor_cls, "query_equals_codes") or not hasattr(tensor_cls, "dictionary_cls"):
             pytest.skip(f"{tensor_cls.__name__} does not support staged query processing.")
@@ -373,7 +373,7 @@ class TestStringColumnTensor:
         stage1_benchmark.stats.extra_info = benchmark.stats.extra_info.copy()
         stage2_benchmark.stats.extra_info = benchmark.stats.extra_info.copy()
 
-    @pytest.mark.parametrize("tensor_cls,scale,col,predicate,device,group", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
+    @pytest.mark.parametrize("group,scale,col,predicate,device,tensor_cls", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
     def test_tpch_string_transfer(self, benchmark, tpch_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, group):
         if device == "cpu":
             pytest.skip("Skipping string transfer test on CPU")
@@ -382,7 +382,7 @@ class TestStringColumnTensor:
         benchmark.group += f" | {group}" if group else ""
         string_transfer(benchmark, tpch_context, tensor_cls, device)
 
-    @pytest.mark.parametrize("tensor_cls,total_count,unique_count,max_length,predicate,selectivity,device,group", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
+    @pytest.mark.parametrize("group,total_count,unique_count,max_length,predicate,selectivity,device,tensor_cls", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
     def test_mssb_string_transfer(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, group):
         if device == "cpu":
             pytest.skip("Skipping string transfer test on CPU")

@@ -21,6 +21,7 @@ class MockPredicate:
             "eq": "Eq",
             "less_than": "Lt",
             "lt": "Lt",
+            "prefix": "Prefix",
         }
         for subclass in cls.__subclasses__():
             if subclass.__name__ == f"Predicate{_aliases[key.lower()]}":

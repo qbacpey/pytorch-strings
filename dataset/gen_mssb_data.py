@@ -38,12 +38,13 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         l = random.randint(1, max_length)
         return ''.join(random.choices(string.ascii_letters + string.digits, k=l))
 
-    def unique_random_strings(count: int, max_length: int = max_length) -> list[str]:
+    def unique_random_strings(count: int, max_length: int = max_length, prefix="", exclude=[]) -> list[str]:
         """Generate count unique random strings with lengths between 1 and max_length."""
         uniq_strs = set()
+        exclude = set(exclude)
         while len(uniq_strs) < count:
-            s = random_string(max_length)
-            if s not in uniq_strs:
+            s = prefix + random_string(max_length)
+            if s not in uniq_strs and s not in exclude:
                 uniq_strs.add(s)
         return list(uniq_strs)
 
@@ -54,12 +55,12 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         weights = weights / weights.sum()
         return weights
 
-    def sample(unique_strs: list[str], weights: np.ndarray, total_count: int) -> StringTensorDict:
+    def sample(uniq_strs: list[str], weights: np.ndarray, total_count: int) -> StringTensorDict:
         """Sample from unique_strs according to weights to generate total_count data."""
         if total_count >= 2 ** 31:
             raise ValueError("Cannot generate more than 2^31 elements.")
 
-        counts = ((total_count - len(unique_strs)) * weights // weights.sum()).astype(int) + 1
+        counts = ((total_count - len(uniq_strs)) * weights // weights.sum()).astype(int) + 1
         if counts.sum() < total_count:
             extra = total_count - counts.sum()
             counts += (extra // len(counts)).astype(int)
@@ -68,10 +69,12 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
             perm = torch.randperm(total_count, dtype=torch.int32).to(torch.int64) # requires 10x temporary space, so put first to ensure no other allocation happens before
 
-            src = PlainEncodingStringColumnTensor.from_strings(unique_strs)
-            src = PlainEncodingStringColumnTensor.from_tensor(src.tensor().unique(dim=0, return_inverse=False))
+            src = PlainEncodingStringColumnTensor.from_strings(uniq_strs).tensor()
+            src, sorted_idxs = src.unique(dim=0, return_inverse=True)
+            sorted_idxs = torch.empty_like(sorted_idxs).scatter_(0, sorted_idxs, torch.arange(len(sorted_idxs)))
+            src = PlainEncodingStringColumnTensor.from_tensor(src)
 
-            counts = torch.tensor(counts)
+            counts = torch.tensor(counts)[sorted_idxs]
             idxs = torch.arange(len(src))
             idxs = torch.repeat_interleave(idxs, counts) # repeat each index according to its count
             idxs = idxs[perm]  # shuffle the indices and we get the final distributed indices, also the encoded_tensor in dictionary encoding
@@ -90,7 +93,7 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
             # cdict = CDictionaryEncodingStringColumnTensor(src, idxs)
             # ucdict = UnsortedCDictionaryEncodingStringColumnTensor(src, idxs).shuffle()
 
-        final_indices = idxs.tolist() if total_count <= 1000_000 else []
+        final_indices = sorted_idxs[idxs].tolist() if total_count <= 1000_000 else []
         strs = [uniq_strs[i] for i in final_indices]
         tensors = [strs, dict]
 
@@ -169,11 +172,10 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         uniq_strs, weights, prefixes = [], [], []
         for i, count in enumerate(cand_uniq_counts):
             prefix = random_string()[:random.randint(1, max_length * 4 // 5)]
-            uniq_strs.extend([prefix + random_string(max_length - len(prefix)) for _ in range(count)])
+            uniq_strs.extend(unique_random_strings(count, max_length - len(prefix), prefix, exclude=uniq_strs))
             weights.extend(zipf_distribution(count) * selectivity_list[i])
             prefixes.append(prefix)
-        
-        uniq_strs.extend(unique_random_strings(unique_count - cand_total_count))
+        uniq_strs.extend(unique_random_strings(unique_count - cand_total_count, exclude=uniq_strs))
         weights = np.append(weights, zipf_distribution(unique_count - cand_total_count) * (1 - total_selectivity))
         data = sample(uniq_strs, weights, total_count)
         query_candidates = [(sel, str) for sel, str in zip(selectivity_list, prefixes)]
@@ -318,15 +320,15 @@ def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate
 
             # assert (
             #     plain.tensor().equal(plain_expected.encoded_tensor)
-            # ), "CPlainEncodingStringColumnTensor does not match expected."
+            # ), "PlainEncodingStringColumnTensor does not match expected."
             assert (
                 dict.encoded_tensor.equal(dict_expected.encoded_tensor) and
                 dict.dictionary.tensor().equal(dict_expected.dictionary.tensor())
-            ), "CDictionaryEncodingStringColumnTensor does not match expected."
+            ), "DictionaryEncodingStringColumnTensor does not match expected."
             # assert (
             #     udict.encoded_tensor.equal(udict_expected.encoded_tensor) and
             #     udict.dictionary.encoded_tensor.equal(udict_expected.dictionary.encoded_tensor)
-            # ), "UnsortedCDictionaryEncodingStringColumnTensor does not match expected."
+            # ), "UnsortedDictionaryEncodingStringColumnTensor does not match expected."
     
 
     # Determine new File ID (sequentially incrementing, like 0001,0002,...)
