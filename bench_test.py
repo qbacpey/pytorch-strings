@@ -317,7 +317,7 @@ def mssb_param_id(params: tuple[str, int, int, int, str, float, str, type[String
     _, total_count, unique_count, max_length, predicate, selectivity, device, tensor_cls = params
     return "-".join([
         f"{total_count:.0g}".replace("e+", "e"),
-        f"{unique_count:0g}".replace("e+0", "e"),
+        f"{unique_count:.0g}".replace("e+0", "e"),
         f"{max_length}",
         predicate,
         f"{selectivity:.3g}",
