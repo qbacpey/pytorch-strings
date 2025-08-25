@@ -34,10 +34,15 @@ tpch_group_name = [[""]]
 # These names will be included in benchmark output CSVs to help categorize and analyze results across groups.
 
 # 10^4 to 10^9
-mssb_total_count = [[10 ** i for i in range(4, 10)]]
-mssb_unique_count = [[1000]]
+# mssb_total_count = [[10 ** i for i in range(4, 10)]]
+mssb_total_count = [[10 ** 6]]
+mssb_unique_count = [[
+    int(10 ** exp * mul)
+    for exp in range(0, 6)
+    for mul in range(1, 10)
+]]
 mssb_max_length = [[20]]
-mssb_predicate = [["eq"]]
+mssb_predicate = [["eq","lt","prefix"]]
 mssb_selectivity = [[0.3]]
 mssb_group_name = [[""]]
 
