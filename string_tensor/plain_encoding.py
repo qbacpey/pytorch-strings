@@ -34,17 +34,19 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
     def __repr__(self) -> str:
         return f"PlainEncodingStringColumnTensor(max_length={self.max_length}, encoded_tensor_shape={self.encoded_tensor.shape})"
 
-    def query_equals(self, query: str) -> torch.Tensor:
+    def query_equals(self, query: str, return_mask=False) -> torch.Tensor:
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
         query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
 
         eq_mask = (self.encoded_tensor == query_tensor)
         match_mask = eq_mask.all(dim=1)
         del eq_mask  # Free memory
-        match_index = match_mask.nonzero().view(-1)
-        return match_index
 
-    def query_less_than(self, query: str) -> torch.Tensor:
+        if return_mask:
+            return match_mask
+        return match_mask.nonzero().view(-1)
+
+    def query_less_than(self, query: str, return_mask=False) -> torch.Tensor:
         # Create properly padded query tensor
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
         query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
@@ -57,19 +59,22 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
         first_ne_tensor = self.encoded_tensor[torch.arange(len(self)), first_ne_index]
         # Get whether the first differing position is less than the query, or must be false if they are equal
         lt_mask = first_ne_tensor < query_tensor[first_ne_index]
-        lt_index = lt_mask.nonzero().view(-1)
 
-        return lt_index
+        if return_mask:
+            return lt_mask
+        return lt_mask.nonzero().view(-1)
 
-    def query_prefix(self, prefix: str) -> torch.Tensor:
+    def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:
         prefix_len = len(prefix)
         prefix_tensor = torch.tensor(list(bytes(prefix, "ascii")), dtype=torch.uint8)
 
         prefix_eq_mask = (self.encoded_tensor[:, :prefix_len] == prefix_tensor)
         match_mask = prefix_eq_mask.all(dim=1)
         del prefix_eq_mask  # Free memory
-        match_index = match_mask.nonzero().view(-1)
-        return match_index
+
+        if return_mask:
+            return match_mask
+        return match_mask.nonzero().view(-1)
 
     def query_aggregate(self) -> torch.Tensor:
         _, inverse_indices = torch.unique(self.encoded_tensor, dim=0, return_inverse=True)

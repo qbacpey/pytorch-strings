@@ -35,15 +35,15 @@ class StringColumnTensor:
         """
         raise NotImplementedError
 
-    def query_equals(self, query: str) -> torch.Tensor:
+    def query_equals(self, query: str, return_mask=False) -> torch.Tensor:
         """Return RowIDs where the string equals the query."""
         raise NotImplementedError
 
-    def query_less_than(self, query: str) -> torch.Tensor:
+    def query_less_than(self, query: str, return_mask=False) -> torch.Tensor:
         """Return RowIDs where the string is less than the query."""
         raise NotImplementedError
 
-    def query_prefix(self, prefix: str) -> torch.Tensor:
+    def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:
         """Return RowIDs where the string starts with the given prefix."""
         raise NotImplementedError
 

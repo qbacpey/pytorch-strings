@@ -12,13 +12,19 @@ class UnsortedDictionaryEncodingStringColumnTensor(
     DictionaryEncodingStringColumnTensor
 ):
 
-    def query_equals_codes(self, codes: torch.Tensor) -> torch.Tensor:
+    def query_equals_codes(self, codes: torch.Tensor, return_mask=False) -> torch.Tensor:
         if len(codes) > 0:
             # If found in dictionary, get index and check against encoded tensor
             code = codes[0]
             matches = self.encoded_tensor == code
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
+
         # If not found in dictionary, return empty tensor
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
     def __repr__(self) -> str:
@@ -28,16 +34,40 @@ class UnsortedDictionaryEncodingStringColumnTensor(
             f"encoded_tensor_shape={self.encoded_tensor.shape})"
         )
 
-    def query_less_than_codes(self, lt_codes: torch.Tensor) -> torch.Tensor:
+    def query_less_than_codes(self, lt_codes: torch.Tensor, return_mask=False) -> torch.Tensor:
         if len(lt_codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == lt_codes).any(dim=1)
+
+            if len(self) * lt_codes.numel() > 1e9:
+                matches = torch.zeros(len(self),dtype=torch.bool)
+                for code in lt_codes:
+                    matches |= self.encoded_tensor == code
+            else:
+                matches = (self.encoded_tensor.view(-1, 1) == lt_codes).any(dim=1)
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
+
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
-    def query_prefix_codes(self, prefix_codes: torch.Tensor) -> torch.Tensor:
+    def query_prefix_codes(self, prefix_codes: torch.Tensor, return_mask=False) -> torch.Tensor:
         if len(prefix_codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == prefix_codes).any(dim=1)
+
+            if len(self) * prefix_codes.numel() > 1e9:
+                matches = torch.zeros(len(self),dtype=torch.bool)
+                for code in prefix_codes:
+                    matches |= self.encoded_tensor == code
+            else:
+                matches = (self.encoded_tensor.view(-1, 1) == prefix_codes).any(dim=1)
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
+
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
     @staticmethod
