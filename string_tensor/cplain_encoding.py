@@ -54,19 +54,18 @@ class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
                 match_mask &= (self.encoded_tensor_transpose[i] == query_tensor[i])
             return lt_mask
 
-        lt_index = torch.empty(0, dtype=torch.long)
+        lt_index = []
         match_index = torch.arange(len(self), dtype=torch.long)
         for i in range(self.max_length):
             # if len(match_index) == 0:
             #     break
             # Filter the encoded tensor for the current character
             filtered_tensor = self.encoded_tensor_transpose[i][match_index]
-            new_lt_mask = (filtered_tensor < query_tensor[i])
-            lt_index = torch.cat((lt_index, match_index[new_lt_mask]))
-            next_mask = (filtered_tensor == query_tensor[i])
-            match_index = match_index[next_mask]
+            lt_index.append(match_index[filtered_tensor < query_tensor[i]])
+            match_index = match_index[filtered_tensor == query_tensor[i]]
 
-        lt_index, _ = lt_index.sort()
+        lt_index = torch.cat(lt_index)
+        lt_index = lt_index.msort()
         return lt_index
 
     def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:
