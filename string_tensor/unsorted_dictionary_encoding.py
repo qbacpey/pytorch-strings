@@ -11,15 +11,35 @@ from .dictionary_encoding import DictionaryEncodingStringColumnTensor
 class UnsortedDictionaryEncodingStringColumnTensor(
     DictionaryEncodingStringColumnTensor
 ):
+    def match_encoded_by_mask(self, mask: torch.Tensor, return_mask=False):
+        matches = mask[self.encoded_tensor]
 
-    def query_equals_codes(self, codes: torch.Tensor) -> torch.Tensor:
-        if len(codes) > 0:
-            # If found in dictionary, get index and check against encoded tensor
+        if return_mask:
+            return matches
+        return matches.nonzero().view(-1)
+
+    def match_encoded_by_codes(self, codes: torch.Tensor, return_mask=False) -> torch.Tensor:
+        if len(codes) > 1:
+
+            if len(self) * codes.numel() > 1e8:
+                matches = torch.zeros(len(self),dtype=torch.bool)
+                for code in codes:
+                    matches |= self.encoded_tensor == code
+            else:
+                matches = (self.encoded_tensor.view(-1, 1) == codes).any(dim=1)
+
+        elif len(codes) == 1:
+
             code = codes[0]
             matches = self.encoded_tensor == code
-            return matches.nonzero().view(-1)
-        # If not found in dictionary, return empty tensor
-        return torch.empty(0, dtype=torch.long)
+
+        else:
+
+            matches = torch.zeros(len(self),dtype=torch.bool)
+
+        if return_mask:
+            return matches
+        return matches.nonzero().view(-1)
 
     def __repr__(self) -> str:
         return (
@@ -28,17 +48,23 @@ class UnsortedDictionaryEncodingStringColumnTensor(
             f"encoded_tensor_shape={self.encoded_tensor.shape})"
         )
 
-    def query_less_than_codes(self, lt_codes: torch.Tensor) -> torch.Tensor:
-        if len(lt_codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == lt_codes).any(dim=1)
-            return matches.nonzero().view(-1)
-        return torch.empty(0, dtype=torch.long)
+    def query_equals_lookup_dict(self, query: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_equals(query, return_mask=True)
 
-    def query_prefix_codes(self, prefix_codes: torch.Tensor) -> torch.Tensor:
-        if len(prefix_codes) > 0:
-            matches = (self.encoded_tensor.view(-1, 1) == prefix_codes).any(dim=1)
-            return matches.nonzero().view(-1)
-        return torch.empty(0, dtype=torch.long)
+    def query_equals_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        return self.match_encoded_by_mask(selector, return_mask)
+
+    def query_less_than_lookup_dict(self, query: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_less_than(query, return_mask=True)
+
+    def query_less_than_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        return self.match_encoded_by_mask(selector, return_mask)
+
+    def query_prefix_lookup_dict(self, prefix: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_prefix(prefix, return_mask=True)
+
+    def query_prefix_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        return self.match_encoded_by_mask(selector, return_mask)
 
     @staticmethod
     def lc_affine_ranbperm(n: int, seed: int | None = None, a: int | None = 1664525, c: int | None = 1013904223, dtype=None, device=None) -> torch.Tensor:

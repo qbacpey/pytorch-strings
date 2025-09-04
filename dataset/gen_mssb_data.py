@@ -361,7 +361,7 @@ class Catalog:
                 rec.unique_count == unique_count and
                 rec.max_length == max_length and
                 rec.predicate == predicate and
-                rec.selectivity_list == selectivity_list):
+                rec.selectivity_list == [float(format(sel, ".3g")) for sel in selectivity_list]):
                 return rec
         return None
 
@@ -440,7 +440,7 @@ MSSB_DataGenArgs = namedtuple('MSSB_DataGenArgs', ['total_count', 'unique_count'
 
 # Initialize with default values
 # specified_args = MSSB_DataGenArgs(100, 10, 20, "equal", [0.1, 0.3, 0.5], False)
-specified_args = MSSB_DataGenArgs(1_000_000, 1000, 20, "equal", [0.3], True)
+specified_args = MSSB_DataGenArgs(1_000_000, int(2e5), 20, "prefix", [0.3], True)
 # specified_args = None
 
 def main():

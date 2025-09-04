@@ -39,40 +39,71 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         """
         return self.encoded_tensor.numel()
 
-    def query_equals(self, query: str) -> torch.Tensor:
-        codes = self.dictionary.query_equals(query)
-        return self.query_equals_codes(codes)
+    def query_equals(self, query: str, return_mask=False) -> torch.Tensor:
+        codes = self.query_equals_lookup_dict(query, return_mask=False)
+        return self.query_equals_match_encoded(codes, return_mask)
 
-    def query_equals_codes(self, codes: torch.Tensor) -> torch.Tensor:
+    def query_equals_lookup_dict(self, query: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_equals(query, return_mask=False)
+
+    def query_equals_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        codes = selector
         if len(codes) > 0:
             # If found in dictionary, get index and check against encoded tensor
             code = codes[0]
             matches = (self.encoded_tensor == code)
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
         # If not found in dictionary, return empty tensor
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
-    def query_less_than(self, query: str) -> torch.Tensor:
-        lt_codes = self.dictionary.query_less_than(query)
-        return self.query_less_than_codes(lt_codes)
+    def query_less_than(self, query: str, return_mask=False) -> torch.Tensor:
+        lt_codes = self.query_less_than_lookup_dict(query, return_mask=False)
+        return self.query_less_than_match_encoded(lt_codes, return_mask)
 
-    def query_less_than_codes(self, lt_codes: torch.Tensor) -> torch.Tensor:
+    def query_less_than_lookup_dict(self, query: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_less_than(query, return_mask=False)
+
+    def query_less_than_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        lt_codes = selector
         if len(lt_codes) > 0:
+
             max_code = lt_codes[-1]
             matches = (self.encoded_tensor <= max_code)
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
+
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
-    def query_prefix(self, prefix: str) -> torch.Tensor:
-        prefix_codes = self.dictionary.query_prefix(prefix)
-        return self.query_prefix_codes(prefix_codes)
+    def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:
+        prefix_codes = self.query_prefix_lookup_dict(prefix, return_mask=False)
+        return self.query_prefix_match_encoded(prefix_codes, return_mask)
 
-    def query_prefix_codes(self, prefix_codes: torch.Tensor) -> torch.Tensor:
+    def query_prefix_lookup_dict(self, prefix: str, return_mask=False) -> torch.Tensor:
+        return self.dictionary.query_prefix(prefix, return_mask=False)
+
+    def query_prefix_match_encoded(self, selector: torch.Tensor, return_mask=False) -> torch.Tensor:
+        prefix_codes = selector
         if len(prefix_codes) > 0:
+
             min_code = prefix_codes[0]
             max_code = prefix_codes[-1]
             matches = (self.encoded_tensor >= min_code) & (self.encoded_tensor <= max_code)
+
+            if return_mask:
+                return matches
             return matches.nonzero().view(-1)
+
+        if return_mask:
+            return torch.zeros(len(self),dtype=torch.bool)
         return torch.empty(0, dtype=torch.long)
 
     def query_aggregate(self) -> torch.Tensor:

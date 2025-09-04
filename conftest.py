@@ -10,12 +10,20 @@ def pytest_addoption(parser: pytest.Parser):
     parser.addoption("--toy-trace", action="store_true", default=False, help="Enable toy tracing")
 
 def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_benchmark.stats.Metadata], output_json: dict) -> None:
+
     benchmarks_dict: list[dict] = output_json["benchmarks"]
+    include_data = "data" in benchmarks_dict[0]["stats"] if benchmarks_dict else True
+
+    # Include failed benchmarks if error message is present
+    for bench in benchmarks:
+        if bench.has_error and bench.extra_info["error"]:
+            benchmarks_dict.append((bench.as_dict(include_data=include_data)))
+
     for bench in benchmarks_dict:
         if "operators" in bench["params"]:
             bench["params"]["operators"] = str(bench["params"]["operators"])
         if "tensor_cls" in bench["params"] and isinstance(bench["params"]["tensor_cls"], type):
-            bench["params"]["tensor_cls"] = bench["params"]["tensor_cls"].__name__.replace("StringColumnTensor", "")
+            bench["params"]["tensor_cls"] = bench["params"]["tensor_cls"].Encoding
 
     # Flatten the stats and extra_info in the benchmarks, only to be used for CSV output but not for JSON output
     benchmarks_dict = benchmarks_dict.copy()
@@ -25,7 +33,7 @@ def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_
         # flatten the extra_info
         bench.update(bench.pop('extra_info'))
 
-    extra_fields = ["col", "op", "pred", "val", "tuple_count", "query_result_size", "tuple_element_size_bytes", "total_size_bytes"]
+    extra_fields = ["col", "op", "pred", "val", "tuple_count", "query_result_size", "tuple_element_size_bytes", "total_size_bytes", "stage", "error"]
     # see pytest_benchmark/plugin.py add_display_options --columns
     stats_fields = ['min', 'max', 'mean', 'stddev', 'median', 'iqr', 'outliers', 'ops', 'rounds', 'iterations']
     # see pytest_benchmark/plugin.py add_display_options --sort
@@ -35,6 +43,10 @@ def pytest_benchmark_update_json(config: pytest.Config, benchmarks: list[pytest_
     # set output file name here
     csv_file = config.getoption("benchmark_csv") or "results.csv"
     print(f"[Benchmark] Writing Benchmark CSV results to: {csv_file}")
+
+    for bench in benchmarks_dict:
+        for field in extra_fields:
+            bench.setdefault(field, None)
 
     results_csv = pytest_benchmark.csv.CSVResults(extra_fields + stats_fields, sort_by_field, config._benchmarksession.logger) # type: ignore
     groups = config.hook.pytest_benchmark_group_stats(
