@@ -180,3 +180,56 @@ def conditional(cond: Callable[..., bool], decorator: Callable[[Callable], Calla
         return conditional_wrapper
 
     return conditional_decorator
+
+class GlobalContext:
+    class Notset: pass
+    notset = Notset()
+
+    def __init__(self):
+        self._setglobal: list[tuple[str, object]] = []
+
+    def set_global(self, name: str, value):
+        self._setglobal.append((name, globals().get(name, self.notset)))
+        globals()[name] = value
+        return self
+
+    def undo(self):
+        for name, value in reversed(self._setglobal):
+            if value is self.notset:
+                try:
+                    del globals()[name]
+                except KeyError:
+                    pass  # Was already deleted, so we have the desired state.
+            else:
+                globals()[name] = value
+        self._setglobal[:] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.undo()
+
+def get_global(name: str, default = None):
+    return globals().get(name, default)
+
+def on_global(name: str, default = None) -> Callable[[], bool]:
+    def get_global(*args, **kwargs) -> bool:
+        return bool(globals().get(name, default))
+    return get_global
+
+class InstanceFinder:
+    import gc
+    from typing import TypeVar
+
+    T = TypeVar('T')
+
+    get_objects = staticmethod(gc.get_objects)
+
+    def __getitem__(self, target_cls: type[T]) -> T:
+        instances = [obj for obj in self.get_objects() if isinstance(obj, target_cls)]
+        return instances[0]
+
+live_instance_of = InstanceFinder()
+
+import toy
