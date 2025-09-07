@@ -13,9 +13,11 @@ from toy import *
 
 # 0.1 - 0.9, 1 - 10, 10 - 100
 # tpch_scale = [[*np.arange(0.1, 1, 0.1), *range(1, 10), *range(10, 110, 10)][0:2]]
-tpch_scale = [[*range(10, 210, 10)]]
+# tpch_scale = [[*range(10, 210, 10)]]
+tpch_scale = [[1]]
 tpch_col = [["l_shipmode"]]
-tpch_predicate = [["lt","prefix"]]
+# tpch_predicate = [["lt","prefix"]]
+tpch_predicate = [["eq"]]
 tpch_return_mask = [[False, True]]
 tpch_group_name = [[""]]
 
@@ -40,7 +42,7 @@ tpch_group_name = [[""]]
 mssb_total_count = [10**6]
 mssb_unique_count = [10000]
 mssb_max_length = [[20]]
-mssb_predicate = [["eq","lt","prefix"][1:2]]
+mssb_predicate = [["eq","lt","prefix"][2]]
 mssb_selectivity = [[0.99]]
 mssb_return_mask = [[False, True][0]]
 mssb_group_name = [[""]]

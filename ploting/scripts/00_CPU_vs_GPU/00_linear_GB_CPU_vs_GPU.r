@@ -17,7 +17,7 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0907_tpch_profile_1to200_eq_Bothnonzero_output.csv"
+input_file <- "0907_tpch_10to200_eq_masknonzero_complieearge_output.csv"
 output_dir <- "plots"
 
 # --- NEW: User-specific plotting choices ---

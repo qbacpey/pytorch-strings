@@ -21,12 +21,19 @@ class DictionaryEncodingStringColumnTensor(StringColumnTensor):
         )
 
     def tuple_size(self) -> int:
-        tuple_size = self.encoded_tensor.element_size()
+        
+        # Use the actual element size of the tensor to calculate the tuple size
+        # tuple_size = self.encoded_tensor.element_size()
+        
+        # Use the original max_length from the dictionary to calculate the tuple size
+        tuple_size = self.dictionary.max_length
+        
         # Print the shape of the encoded tensor for debugging
         # total_bytes = self.encoded_tensor.nbytes
         # print(f"Encoded tensor shape: {self.encoded_tensor.shape}")
         # print(f"Number of elements: {self.encoded_tensor.numel()}")
         # print(f"Size of one element: {self.encoded_tensor.element_size()} bytes")
+        # print(f"Max length from dictionary: {self.dictionary.max_length} bytes")
         # print(f"Total memory size (in bytes): {total_bytes}")
         return tuple_size
 
