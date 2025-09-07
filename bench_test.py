@@ -272,7 +272,13 @@ def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext,
     with handle_error(benchmark), torch.device(device):
         _, tensors, op, expected = ctx
         tensor = transfer_col(tensors[tensor_cls.__name__], device)
-        result = benchmark(op.apply, tensor, return_mask)
+    
+        if torch_compile:
+            apply_op = torch.compile(op.apply)
+        else:
+            apply_op = op.apply
+
+        result = benchmark(apply_op, tensor, return_mask)
 
         tuple_count = len(tensor)
         query_result_size = len(result)
@@ -389,7 +395,7 @@ def mssb_param_id(params: tuple[str, int, int, int, str, float, str, type[String
 
 @pytest.mark.benchmark(
     warmup=True,
-    warmup_iterations=5,
+    warmup_iterations=3,
     timer=torch_timer,
 )
 class TestStringColumnTensor:
