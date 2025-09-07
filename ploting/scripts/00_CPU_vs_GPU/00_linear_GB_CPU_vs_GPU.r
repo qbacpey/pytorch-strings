@@ -17,15 +17,18 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0905_tpch_10to200_eq_Bothnonzero_output.csv"
+input_file <- "0907_tpch_profile_1to200_eq_Bothnonzero_output.csv"
 output_dir <- "plots"
 
 # --- NEW: User-specific plotting choices ---
 # Set to TRUE to plot data where nonzero() was used, FALSE for returning the mask
-USE_MASK <- TRUE
-# USE_MASK <- FALSE
+# USE_MASK <- TRUE
+USE_MASK <- FALSE
 # Specify the predicate to plot: "Eq", "Lt", or "Prefix"
 PREDICATE_TO_PLOT <- "Eq"
+
+# USE_TORCH_COMPILE <- FALSE
+USE_TORCH_COMPILE <- TRUE
 
 # Theoretical Memory Bandwidth (in bytes per second)
 THEORETICAL_GPU_BANDWIDTH <- 1.1e12 # 1.1 TB/s
@@ -51,7 +54,11 @@ encoding_order <- c(
 
 # --- MODIFIED: Filter data based on user configuration ---
 plot_data <- data %>%
-  filter(pred == PREDICATE_TO_PLOT, `param:return_mask` == USE_MASK) %>%
+  filter(
+    pred == PREDICATE_TO_PLOT,
+    `param:return_mask` == USE_MASK,
+    `param:torch_compile` == USE_TORCH_COMPILE
+  ) %>%
   mutate(
     throughput_gb_per_sec = (total_size_bytes / 1e9) / (.data[[TIME_METRIC]])
   ) %>%
@@ -131,22 +138,24 @@ if (nrow(plot_data) > 0) {
   # Get descriptive names for titles and filenames
   descriptive_pred_name <- unique(plot_data$pred_name)
   nonzero_label <- if (USE_MASK) "Return Mask" else "With Nonzero"
+  compile_label <- if (USE_TORCH_COMPILE) "Compiled" else "Not Compiled"
 
   # Create the plot
   p <- create_throughput_plot(plot_data) +
     facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(
       title = paste("Throughput for Predicate:", descriptive_pred_name),
-      subtitle = paste("Operation:", nonzero_label),
+      subtitle = paste("Operation:", nonzero_label, "| Torch Compile:", compile_label),
       caption = "Each panel represents a different string encoding algorithm."
     )
 
   # Generate a descriptive filename
-  filename_suffix <- if (USE_MASK) "_Mask" else "_Nonzero"
-  output_filename <- file.path(output_dir, paste0("00_linear_GB_TPCH_Faceted_", descriptive_pred_name, filename_suffix, ".png"))
+  filename_suffix_mask <- if (USE_MASK) "_Mask" else "_Nonzero"
+  filename_suffix_compile <- if (USE_TORCH_COMPILE) "_Compiled" else "_NoCompile"
+  output_filename <- file.path(output_dir, paste0("00_linear_GB_TPCH_Faceted_", descriptive_pred_name, filename_suffix_mask, filename_suffix_compile, ".png"))
   
   ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
   print(paste("Linear-scale plot saved to:", output_filename))
 } else {
-  print("No data available for the specified configuration (PREDICATE_TO_PLOT and USE_MASK). No plot generated.")
+  print("No data available for the specified configuration (PREDICATE_TO_PLOT, USE_MASK, and USE_TORCH_COMPILE). No plot generated.")
 }
