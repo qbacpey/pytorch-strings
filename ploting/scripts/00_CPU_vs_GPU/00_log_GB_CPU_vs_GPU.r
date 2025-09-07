@@ -17,11 +17,11 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0011_allPrefix.csv"
+input_file <- "0904_tpch_1to100_eq_Bothnonzero_output.csv"
 output_dir <- "plots"
 
 # Theoretical Memory Bandwidth (in bytes per second)
-THEORETICAL_GPU_BANDWIDTH <- 1.6e12 # 1.6 TB/s
+THEORETICAL_GPU_BANDWIDTH <- 1.1e12 # 1.1 TB/s
 THEORETICAL_CPU_BANDWIDTH <- 60e9  # 60 GB/s
 
 # Time metric to use for throughput calculation
@@ -44,6 +44,7 @@ encoding_order <- c(
 )
 
 plot_data <- data %>%
+  filter(`param:return_mask` == TRUE) %>%
   mutate(
     throughput_gb_per_sec = (total_size_bytes / .data[[TIME_METRIC]]) / 1e9
   ) %>%
@@ -133,7 +134,7 @@ if (PLOT_STYLE == "facet") {
         title = paste("Throughput for Predicate:", descriptive_pred_name, "(Log Scale)"),
         caption = "Each panel represents a different string encoding algorithm."
       )
-    output_filename <- file.path(output_dir, paste0("00_log_GB_TPCH_Faceted_", descriptive_pred_name, ".png"))
+    output_filename <- file.path(output_dir, paste0("00_log_GB_TPCH_Faceted_nonzero", descriptive_pred_name, ".png"))
     ggsave(output_filename, p, width = 12, height = 8, dpi = 300, bg = BACKGROUND_STYLE)
     print(paste("Log-scale plot saved to:", output_filename))
   }
