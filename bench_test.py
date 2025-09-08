@@ -331,6 +331,7 @@ def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext,
     if device == "cuda":
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+        torch._dynamo.reset()
 
     with handle_error(benchmark), torch.device(device):
         _, tensors, op, expected = ctx
