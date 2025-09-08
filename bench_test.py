@@ -233,11 +233,63 @@ def torch_timer() -> float:
 @contextlib.contextmanager
 def handle_error(benchmark: BenchmarkFixture):
 
-    def stringify_and_release_traceback_locals(exc: BaseException):
+    import gc
+    import types
+
+    def is_referencing_tensors(obj, cache={}):
+        if id(obj) in cache:
+            return cache[id(obj)], 0
+        cache[id(obj)] = False
+
+        if isinstance(obj, torch.Tensor):
+            if obj.is_cuda and obj.numel() > 0 and not isinstance(obj, torch._subclasses.FakeTensor):
+                cache[id(obj)] = True
+                return True, 1
+            return False, 1
+
+        refs = gc.get_referents(obj)
+        if not refs or isinstance(obj, types.ModuleType) or isinstance(obj, type):
+            return False, 1
+        
+        steps = 0
+        for ref in refs:
+            found, count = is_referencing_tensors(ref, cache)
+            steps += count
+            if found:
+                cache[id(obj)] = True
+                return True, steps
+    
+        return False, steps
+
+    def objects_referencing_tensors():
+        objs = gc.get_objects()
+        steps = [len(objs)]
+
+        referents = {id(obj): gc.get_referents(obj) for obj in objs}
+        steps.append(sum(len(v) for v in referents.values()))
+
+        reachable_ids = set()
+        new_ids = {id(obj) for obj in objs if isinstance(obj, torch.Tensor) and 
+                   obj.is_cuda and obj.numel() > 0 and not isinstance(obj, torch._subclasses.FakeTensor)}
+
+        while new_ids:
+            new_ids -= reachable_ids
+            reachable_ids |= new_ids
+            steps.append(len(new_ids))
+            new_ids = {id(ref) for oid in new_ids for ref in referents.get(oid, [])}
+    
+        return reachable_ids, steps
+
+    def stringify_and_release_traceback_locals_referencing_tensors(exc: BaseException):
         # This function will stringify and overwrite traceback locals to drop large tensor refs
         # freeing GPU memory while keeping the traceback printed normally
         import ctypes
         from _pytest._io.saferepr import saferepr, safeformat
+
+        if exc.__cause__:
+            stringify_and_release_traceback_locals_referencing_tensors(exc.__cause__)
+        if exc.__context__ and not exc.__suppress_context__:
+            stringify_and_release_traceback_locals_referencing_tensors(exc.__context__)
 
         _PyFrame_LocalsToFast = ctypes.pythonapi.PyFrame_LocalsToFast
         _PyFrame_LocalsToFast.argtypes = [ctypes.py_object, ctypes.c_int]
@@ -250,11 +302,14 @@ def handle_error(benchmark: BenchmarkFixture):
         # Skip *this* frame
         tb = exc.__traceback__.tb_next
 
+        # referencing_ids, _ = objects_referencing_tensors()
         while tb is not None:
             f = tb.tb_frame
             f_locals = f.f_locals
             for k, v in list(f_locals.items()):
-                f_locals[k] = saferepr(v) if truncate_locals else safeformat(v)
+                # if id(v) in referencing_ids:
+                if is_referencing_tensors(v)[0]:
+                    f_locals[k] = saferepr(v) if truncate_locals else safeformat(v)
             _PyFrame_LocalsToFast(f, 1)
             tb = tb.tb_next
 
@@ -267,7 +322,7 @@ def handle_error(benchmark: BenchmarkFixture):
         stats.extra_info["error"] = repr(e)
         stats = stats.stats
         stats.as_dict = lambda: {field: getattr(stats, field) if stats.data else 0 for field in stats.fields}
-        stringify_and_release_traceback_locals(e)
+        stringify_and_release_traceback_locals_referencing_tensors(e)
         raise e
 
 @conditional(toy.on_global("toy_tracing"))
