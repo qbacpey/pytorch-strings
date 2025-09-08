@@ -17,18 +17,25 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0907_tpch_10to200_eq_masknonzero_complieearge_output.csv"
+input_file <- "0908_tpch_10to200_Eq_CUDA.csv"
 output_dir <- "plots"
 
 # --- NEW: User-specific plotting choices ---
 # Set to TRUE to plot data where nonzero() was used, FALSE for returning the mask
-# USE_MASK <- TRUE
-USE_MASK <- FALSE
+USE_MASK <- TRUE
+# USE_MASK <- FALSE
 # Specify the predicate to plot: "Eq", "Lt", or "Prefix"
 PREDICATE_TO_PLOT <- "Eq"
 
-# USE_TORCH_COMPILE <- FALSE
-USE_TORCH_COMPILE <- TRUE
+USE_TORCH_COMPILE <- FALSE
+# USE_TORCH_COMPILE <- TRUE
+
+# --- NEW: X-axis label configuration ---
+# This controls which labels are displayed on the x-axis.
+# It does NOT filter the data; all data points will still be plotted.
+# Set to NULL to let ggplot decide the labels automatically.
+X_AXIS_BREAKS <- c(10, 50, 100, 150, 200)
+# X_AXIS_BREAKS <- NULL
 
 # Theoretical Memory Bandwidth (in bytes per second)
 THEORETICAL_GPU_BANDWIDTH <- 1.1e12 # 1.1 TB/s
@@ -86,7 +93,7 @@ create_throughput_plot <- function(df) {
     "CUDA" = paste0("CUDA (", THEORETICAL_GPU_BANDWIDTH / 1e9, " GB/s)")
   )
 
-  ggplot(df, aes(x = `param:scale`, y = throughput_gb_per_sec, color = Device, group = Device)) +
+  p <- ggplot(df, aes(x = `param:scale`, y = throughput_gb_per_sec, color = Device, group = Device)) +
     # --- Measured Performance (colored by Device) ---
     geom_line(linewidth = 1) +
     geom_point(size = 3, aes(shape = Device)) +
@@ -113,9 +120,15 @@ create_throughput_plot <- function(df) {
     ) +
 
     # --- Updated linetype scale to match the new description ---
-    scale_linetype_manual(name = "Line Type", values = c("Theoretical Bandwidth (DGX)" = "dashed")) +
+    scale_linetype_manual(name = "Line Type", values = c("Theoretical Bandwidth (DGX)" = "dashed"))
 
-    labs(
+  # --- NEW: Add custom x-axis breaks if specified ---
+  # This only changes the labels shown on the axis, not the data being plotted.
+  if (!is.null(X_AXIS_BREAKS)) {
+    p <- p + scale_x_discrete(breaks = as.character(X_AXIS_BREAKS))
+  }
+
+  p <- p + labs(
       # Title and subtitle will be set later
       x = "TPC-H Scale Factor",
       y = "Throughput (GB/s)",
@@ -125,9 +138,13 @@ create_throughput_plot <- function(df) {
     theme(
       plot.title = element_text(face = "bold"),
       legend.position = "bottom",
-      legend.box = "vertical"
+      legend.box = "vertical",
+       axis.text = element_text(size = 12) # Controls both x and y axis labels
     )
+  
+  return(p)
 }
+
 
 
 # --- 3. Generate and Save Plot ---
