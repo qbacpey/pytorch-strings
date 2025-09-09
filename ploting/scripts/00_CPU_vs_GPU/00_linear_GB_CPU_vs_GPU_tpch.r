@@ -1,6 +1,6 @@
 # --- 0. Setup: Load Libraries and Configure Parameters ---
 # install.packages(c("ggplot2", "dplyr", "readr", "stringr", "scales"))
-# source("00_linear_GB_CPU_vs_GPU.r")
+# source("00_linear_GB_CPU_vs_GPU_tpch.r")
 
 # Install necessary packages if they are not already installed
 if (!require("ggplot2")) install.packages("ggplot2")
@@ -17,18 +17,19 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0908_tpch_10to200_Eq.csv"
+input_file <- "0909_mssb_10to200_all.csv"
 output_dir <- "plots"
 
 # --- NEW: User-specific plotting choices ---
 # Set to TRUE to plot data where nonzero() was used, FALSE for returning the mask
 # USE_MASK <- TRUE
 USE_MASK <- FALSE
+
 # Specify the predicate to plot: "Eq", "Lt", or "Prefix"
 PREDICATE_TO_PLOT <- "Eq"
 
-USE_TORCH_COMPILE <- FALSE
-# USE_TORCH_COMPILE <- TRUE
+# USE_TORCH_COMPILE <- FALSE
+USE_TORCH_COMPILE <- TRUE
 
 # --- NEW: X-axis label configuration ---
 # This controls which labels are displayed on the x-axis.
@@ -131,6 +132,7 @@ create_throughput_plot <- function(df) {
   p <- p + labs(
       # Title and subtitle will be set later
       x = "TPC-H Scale Factor",
+      # x = "MSSB Scale Factor",
       y = "Throughput (GB/s)",
       linetype = "Line Type"
     ) +
