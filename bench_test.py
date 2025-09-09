@@ -71,8 +71,8 @@ tensor_cls = [[
 # ]]
 
 # device = [["cpu", "cuda"][-1]]
-# device = [["cpu", "cuda"]]
-device = [["cuda"]]
+device = [["cpu", "cuda"]]
+# device = [["cuda"]]
 
 torch_compile = [[False, True]]
 

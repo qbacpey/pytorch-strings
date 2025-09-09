@@ -17,13 +17,13 @@ library(scales)
 
 # --- Configuration ---
 # File Paths
-input_file <- "0908_tpch_10to200_Eq_CUDA.csv"
+input_file <- "0908_tpch_10to200_Eq.csv"
 output_dir <- "plots"
 
 # --- NEW: User-specific plotting choices ---
 # Set to TRUE to plot data where nonzero() was used, FALSE for returning the mask
-USE_MASK <- TRUE
-# USE_MASK <- FALSE
+# USE_MASK <- TRUE
+USE_MASK <- FALSE
 # Specify the predicate to plot: "Eq", "Lt", or "Prefix"
 PREDICATE_TO_PLOT <- "Eq"
 
