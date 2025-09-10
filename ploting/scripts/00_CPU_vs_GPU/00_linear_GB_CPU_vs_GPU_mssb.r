@@ -16,20 +16,19 @@ library(stringr)
 library(scales)
 
 # --- Configuration ---
-# File Paths
-input_file <- "0909_mssb_10to200_all.csv"
+# --- MODIFIED: Arguments are now passed from the command line ---
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) != 4) {
+  stop("Usage: Rscript 00_linear_GB_CPU_vs_GPU_mssb.r <input_file> <use_mask> <use_torch_compile> <predicate>", call. = FALSE)
+}
+
+input_file <- args[1]
+USE_MASK <- as.logical(args[2])
+USE_TORCH_COMPILE <- as.logical(args[3])
+PREDICATE_TO_PLOT <- args[4]
+
 output_dir <- "plots"
-
-# --- NEW: User-specific plotting choices ---
-# Set to TRUE to plot data where nonzero() was used, FALSE for returning the mask
-# USE_MASK <- TRUE
-USE_MASK <- FALSE
-
-# Specify the predicate to plot: "Eq", "Lt", or "Prefix"
-PREDICATE_TO_PLOT <- "Eq"
-
-# USE_TORCH_COMPILE <- FALSE
-USE_TORCH_COMPILE <- TRUE
 
 # --- NEW: X-axis label configuration ---
 # This controls which labels are displayed on the x-axis.
@@ -155,13 +154,14 @@ if (nrow(plot_data) > 0) {
   descriptive_pred_name <- unique(plot_data$pred_name)
   nonzero_label <- if (USE_MASK) "Return Mask" else "With Nonzero"
   compile_label <- if (USE_TORCH_COMPILE) "Compiled" else "Not Compiled"
+  max_length_val <- unique(plot_data$`param:max_length`)
 
   # Create the plot
   p <- create_throughput_plot(plot_data) +
     facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(
       title = paste("MSSB Throughput for Predicate:", descriptive_pred_name),
-      subtitle = paste("Operation:", nonzero_label, "| Torch Compile:", compile_label),
+      subtitle = paste("Operation:", nonzero_label, "| Torch Compile:", compile_label, "| Max Length:", max_length_val, "Bytes"),
       caption = "Each panel represents a different string encoding algorithm."
     )
 

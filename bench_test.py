@@ -18,7 +18,7 @@ tpch_scale = [[1, *range(10, 210, 10)]]
 tpch_col = [["l_shipmode"]]
 # tpch_predicate = [["lt","prefix"]]
 tpch_predicate = [["eq","lt","prefix"]]
-tpch_predicate = [["eq"]]
+# tpch_predicate = [["eq"]]
 tpch_return_mask = [[False, True]]
 tpch_group_name = [[""]]
 
