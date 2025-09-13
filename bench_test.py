@@ -40,8 +40,8 @@ tpch_group_name = [[""]]
 # These names will be included in benchmark output CSVs to help categorize and analyze results across groups.
 
 # 10^4 to 10^9
-mssb_total_count = [[10 ** i for i in range(6, 10)]]
-# mssb_total_count = [10**8]
+# mssb_total_count = [[10 ** i for i in range(6, 10)]]
+mssb_total_count = [10**8]
 mssb_unique_count = [10000]
 mssb_max_length = [[20]]
 mssb_predicate = [["eq","lt","prefix"]]
@@ -74,6 +74,7 @@ tensor_cls = [[
 device = [["cpu", "cuda"]]
 # device = [["cuda"]]
 
+# torch_compile = [[True]]
 torch_compile = [[False, True]]
 
 def params_grid_groups(*args):
