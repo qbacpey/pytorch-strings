@@ -30,6 +30,21 @@ PREDICATE_TO_PLOT <- args[4]
 
 output_dir <- "plots"
 
+# --- NEW: In-script plotting options ---
+SHOW_THEORETICAL_BANDWIDTH <- FALSE
+SHOW_MAX_LENGTH <- FALSE
+
+# --- NEW: Title and Subtitle Position ---
+# 0 = left, 0.5 = center, 1 = right
+TITLE_HJUST <- 0.5
+SUBTITLE_HJUST <- 0.5
+
+# --- NEW: Title, Subtitle, and Legend Styling ---
+TITLE_SIZE <- 22
+SUBTITLE_SIZE <- 15
+# Adjust the margin around the legend (t, r, b, l). Negative top margin reduces space.
+LEGEND_MARGIN_VAL <- margin(t = -10, unit = "pt")
+
 # --- NEW: X-axis label configuration ---
 # This controls which labels are displayed on the x-axis.
 # It does NOT filter the data; all data points will still be plotted.
@@ -43,7 +58,7 @@ THEORETICAL_CPU_BANDWIDTH <- 60e9  # 60 GB/s
 
 # Time metric to use for throughput calculation
 TIME_METRIC <- "mean"
-BACKGROUND_STYLE <- "white"
+BACKGROUND_STYLE <- "transparent"
 
 # --- 1. Data Loading and Preparation ---
 data <- read_csv(input_file, show_col_types = FALSE)
@@ -58,13 +73,17 @@ encoding_order <- c(
   "PlainEncoding", "CPlainEncoding", "UnsortedDictionaryEncoding",
   "UnsortedCDictionaryEncoding", "DictionaryEncoding", "CDictionaryEncoding"
 )
+# encoding_order <- c(
+#   "PlainEncoding"
+# )
 
 # --- MODIFIED: Filter data based on user configuration ---
 plot_data <- data %>%
   filter(
     pred == PREDICATE_TO_PLOT,
     `param:return_mask` == USE_MASK,
-    `param:torch_compile` == USE_TORCH_COMPILE
+    `param:torch_compile` == USE_TORCH_COMPILE,
+    `param:tensor_cls` %in% encoding_order
   ) %>%
   mutate(
     throughput_gb_per_sec = (total_size_bytes / 1e9) / (.data[[TIME_METRIC]])
@@ -94,15 +113,19 @@ create_throughput_plot <- function(df) {
   p <- ggplot(df, aes(x = `param:total_count`, y = throughput_gb_per_sec, color = Device, group = Device)) +
     # --- Measured Performance (colored by Device) ---
     geom_line(linewidth = 1) +
-    geom_point(size = 3, aes(shape = Device)) +
+    geom_point(size = 3, aes(shape = Device))
 
-    # --- Theoretical Performance (colored by Device, with updated legend) ---
-    geom_line(
+  # --- MODIFIED: Conditionally add theoretical bandwidth line ---
+  if (SHOW_THEORETICAL_BANDWIDTH) {
+    p <- p + geom_line(
       aes(y = theoretical_throughput_gb_per_sec, linetype = "Theoretical Bandwidth (DGX)"),
-      # The 'color = Device' aesthetic is now inherited from the main ggplot() call
       linewidth = 1
     ) +
+    # --- Updated linetype scale to match the new description ---
+    scale_linetype_manual(name = "Line Type", values = c("Theoretical Bandwidth (DGX)" = "dashed"))
+  }
 
+  p <- p +
     # --- REMOVED: scale_y_log10() for linear scale ---
 
     # --- Updated scales to include bandwidth in the legend labels ---
@@ -115,10 +138,7 @@ create_throughput_plot <- function(df) {
       name = "Device (Theoretical Bandwidth)",
       values = c("CPU" = 16, "CUDA" = 17),
       labels = legend_labels
-    ) +
-
-    # --- Updated linetype scale to match the new description ---
-    scale_linetype_manual(name = "Line Type", values = c("Theoretical Bandwidth (DGX)" = "dashed"))
+    )
 
   # --- MODIFIED: Use a log scale for the x-axis with scientific notation ---
   p <- p + scale_x_log10(
@@ -134,9 +154,11 @@ create_throughput_plot <- function(df) {
     ) +
     theme_minimal(base_size = 14) +
     theme(
-      plot.title = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", hjust = TITLE_HJUST, size = TITLE_SIZE),
+      plot.subtitle = element_text(hjust = SUBTITLE_HJUST, size = SUBTITLE_SIZE),
       legend.position = "bottom",
       legend.box = "vertical",
+      legend.margin = LEGEND_MARGIN_VAL,
        axis.text = element_text(size = 12) # Controls both x and y axis labels
     )
   
@@ -153,15 +175,20 @@ if (nrow(plot_data) > 0) {
   # Get descriptive names for titles and filenames
   descriptive_pred_name <- unique(plot_data$pred_name)
   nonzero_label <- if (USE_MASK) "Return Mask" else "With Nonzero"
-  compile_label <- if (USE_TORCH_COMPILE) "Compiled" else "Not Compiled"
   max_length_val <- unique(plot_data$`param:max_length`)
+
+  # --- MODIFIED: Build subtitle conditionally ---
+  subtitle_text <- paste("Operation:", nonzero_label)
+  if (SHOW_MAX_LENGTH) {
+    subtitle_text <- paste(subtitle_text, "| Max Length:", max_length_val, "Bytes")
+  }
 
   # Create the plot
   p <- create_throughput_plot(plot_data) +
     facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(
       title = paste("MSSB Throughput for Predicate:", descriptive_pred_name),
-      subtitle = paste("Operation:", nonzero_label, "| Torch Compile:", compile_label, "| Max Length:", max_length_val, "Bytes"),
+      subtitle = subtitle_text,
       caption = "Each panel represents a different string encoding algorithm."
     )
 
