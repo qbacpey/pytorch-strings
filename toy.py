@@ -2,6 +2,7 @@ import os
 import time
 import linecache
 import functools
+import contextlib
 import sys
 import torch
 
@@ -61,7 +62,7 @@ def cuda_timer():
     torch.cuda.synchronize()
     return time.perf_counter()
 
-def make_cuda_tracer(target_fn_name: str | None = None):
+def cuda_tracer(target_fn_name: str | None = None):
 
     prev = {
         "alloc": 0,
@@ -94,7 +95,7 @@ def make_cuda_tracer(target_fn_name: str | None = None):
         source_line = linecache.getline(filename, lineno).strip()
 
         alloc, resv = cuda_mem()
-        now = time.perf_counter()
+        now = cuda_timer()
         elapsed = now - prev["time"]
 
         delta_alloc = alloc - prev["alloc"]
@@ -117,33 +118,50 @@ def make_cuda_tracer(target_fn_name: str | None = None):
 
         prev["alloc"] = alloc
         prev["resv"] = resv
-        prev["time"] = time.perf_counter()
-
+        prev["time"] = cuda_timer()
         return tracer
 
     return tracer
 
+# def trace(tracer):
+#     """
+#     Decorator factory that applies a sys.settrace tracer to a function.
+#     Usage:
+#         @trace(my_tracer)
+#         def f(): ...
+#     """
+#     def decorator(func):
+
+#         @functools.wraps(func)
+#         def wrapper(*args, **kwargs):
+#             old_tracer = sys.gettrace()
+#             sys.settrace(tracer)
+#             try:
+#                 return func(*args, **kwargs)
+#             finally:
+#                 sys.settrace(old_tracer)
+
+#         return wrapper
+
+#     return decorator
+
+@contextlib.contextmanager
 def trace(tracer):
     """
-    Decorator factory that applies a sys.settrace tracer to a function.
+    Context manager that applies a sys.settrace tracer.
     Usage:
+        with trace(my_tracer):
+            ...
+        
         @trace(my_tracer)
         def f(): ...
     """
-    def decorator(func):
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            old_tracer = sys.gettrace()
-            sys.settrace(tracer)
-            try:
-                return func(*args, **kwargs)
-            finally:
-                sys.settrace(old_tracer)
-
-        return wrapper
-
-    return decorator
+    old_tracer = sys.gettrace()
+    sys.settrace(tracer)
+    try:
+        yield
+    finally:
+        sys.settrace(old_tracer)
 
 def cuda_trace(func):
     """
@@ -152,7 +170,7 @@ def cuda_trace(func):
         @cuda_trace
         def f(): ...
     """
-    tracer = make_cuda_tracer()
+    tracer = cuda_tracer()
     return trace(tracer)(func)
 
 def conditional(cond: Callable[..., bool], decorator: Callable[[Callable], Callable] | None = None):

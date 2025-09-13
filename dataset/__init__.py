@@ -29,9 +29,9 @@ def gen_tpch_col(scale: float, cols: list[str] | set[str], path: str = "dataset/
     from .gen_tpch_data import generate_and_save_tpch_data
     generate_and_save_tpch_data(scale, cols, path)
 
-def gen_mssb_col(total_count: int, unique_count: int, max_length: int, predicate: str, selectivity_list: list[float], path: str = "dataset/mssb_data"):
+def gen_mssb_col(total_count: int, unique_count: int, min_length: int, max_length: int, predicate: str, selectivity_list: list[float], path: str = "dataset/mssb_data"):
     from .gen_mssb_data import generate_and_save_mssb_data
-    generate_and_save_mssb_data(total_count, unique_count, max_length, predicate, selectivity_list, path)
+    generate_and_save_mssb_data(total_count, unique_count, min_length, max_length, predicate, selectivity_list, path)
 
 def construct_tensors(tensors: StringTensorDict) -> StringTensorDict:
     strs = tensors["list"]
