@@ -2,6 +2,7 @@ import torch
 import pytest
 import contextlib
 import time
+import gc
 from pytest_benchmark.plugin import BenchmarkFixture, BenchmarkSession
 from itertools import product
 
@@ -149,7 +150,7 @@ def tpch_context(col: str, scale: float, predicate: str) -> StringTensorTestCont
 @cuda_trace
 def mssb_context(total_count, unique_count, max_length, predicate, selectivity) -> StringTensorTestContext:
 
-    gen_mssb_col(total_count, unique_count, max_length, predicate, [selectivity], "dataset/mssb_data")
+    gen_mssb_col(total_count, unique_count, max_length * 1 // 2, max_length, predicate, [selectivity], "dataset/mssb_data")
     meta, tensors = load_mssb_col(total_count, unique_count, max_length, predicate, [selectivity])
 
     query = next(q for s, q in meta.query_candidates if s == float(format(selectivity, ".3g")))
@@ -162,6 +163,19 @@ def mssb_context(total_count, unique_count, max_length, predicate, selectivity) 
         expected = None
 
     return StringTensorTestContext(meta, tensors, op, expected)
+
+def clear_inductor_caches():
+    import torch._inductor.utils
+    import torch._inductor.codecache
+    import torch._inductor.codegen.simd
+    import torch._inductor.metrics
+
+    for mod in torch._inductor.codecache.PyCodeCache.cache.values():
+        sys.modules.pop(mod.__name__, None)
+
+    torch._inductor.utils.clear_inductor_caches()
+    torch._inductor.codegen.simd.SIMDScheduling.candidate_tilings.cache_clear()
+    torch._inductor.metrics.reset()
 
 @pytest.fixture(scope="function")
 def make_benchmark(request: pytest.FixtureRequest):
@@ -201,39 +215,8 @@ def make_benchmark(request: pytest.FixtureRequest):
     for benchmark in benchmarks:
         benchmark._cleanup()
 
-@pytest.fixture(scope="function")
-def torch_profile(request: pytest.FixtureRequest):
-    if not request.config.getoption("torch_profile"):
-        yield
-        return
-
-    with (
-        torch.profiler.profile(
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
-            # schedule=torch.profiler.schedule(wait=0, warmup=1, active=1),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler("./trace", request.node.name),
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-        ) as prof,
-    ):
-        yield prof
-
-    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=100))
-
-def torch_timer() -> float:
-    if torch.empty(()).device.type == "cuda":
-        torch.cuda.synchronize()
-    return time.perf_counter()
-
 @contextlib.contextmanager
 def handle_error(benchmark: BenchmarkFixture):
-
-    import gc
-    import types
 
     def is_referencing_tensors(obj, cache={}):
         if id(obj) in cache:
@@ -247,9 +230,9 @@ def handle_error(benchmark: BenchmarkFixture):
             return False, 1
 
         refs = gc.get_referents(obj)
-        if not refs or isinstance(obj, types.ModuleType) or isinstance(obj, type):
+        if not refs:
             return False, 1
-        
+
         steps = 0
         for ref in refs:
             found, count = is_referencing_tensors(ref, cache)
@@ -264,19 +247,23 @@ def handle_error(benchmark: BenchmarkFixture):
         objs = gc.get_objects()
         steps = [len(objs)]
 
-        referents = {id(obj): gc.get_referents(obj) for obj in objs}
-        steps.append(sum(len(v) for v in referents.values()))
+        # referrers = {id(obj): gc.get_referrers(obj) for obj in objs}
+        referrers: dict[int, list] = {}
+        for o in objs:
+            for r in gc.get_referents(o):
+                referrers.setdefault(id(r), []).append(o)
+        steps.append(sum(len(v) for v in referrers.values()))
 
         reachable_ids = set()
         new_ids = {id(obj) for obj in objs if isinstance(obj, torch.Tensor) and 
                    obj.is_cuda and obj.numel() > 0 and not isinstance(obj, torch._subclasses.FakeTensor)}
 
         while new_ids:
-            new_ids -= reachable_ids
             reachable_ids |= new_ids
             steps.append(len(new_ids))
-            new_ids = {id(ref) for oid in new_ids for ref in referents.get(oid, [])}
-    
+            new_ids = {id(ref) for oid in new_ids for ref in referrers.get(oid, [])}
+            new_ids -= reachable_ids
+
         return reachable_ids, steps
 
     def stringify_and_release_traceback_locals_referencing_tensors(exc: BaseException):
@@ -324,24 +311,78 @@ def handle_error(benchmark: BenchmarkFixture):
         stringify_and_release_traceback_locals_referencing_tensors(e)
         raise e
 
-@conditional(toy.on_global("toy_tracing"))
-@cuda_trace
-def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, tensor_cls: type[StringColumnTensor], device: str, return_mask: bool, torch_compile: bool):
+@contextlib.contextmanager
+def torch_profile(benchmark: BenchmarkFixture):
+    node: pytest.Function = benchmark._warner.__self__
+
+    if not node.config.getoption("torch_profile"):
+        yield
+        return
+
+    with (
+        torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            # schedule=torch.profiler.schedule(wait=0, warmup=1, active=1),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./trace", node.name),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        ) as prof,
+    ):
+        yield prof
+
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=100))
+
+@contextlib.contextmanager
+def toy_trace():
+    if not toy.on_global("toy_tracing")():
+        yield
+        return
+    
+    with toy.trace(toy.cuda_tracer()):
+        yield
+
+@contextlib.contextmanager
+def torch_device(device: str):
+    with torch.device(device):
+        yield
+
+@contextlib.contextmanager
+def torch_clean(device: str):
+    if device == "cuda":
+        torch.cuda.synchronize()
+
+    torch.compiler.reset()
+    clear_inductor_caches()
+    gc.collect()
+
     if device == "cuda":
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        torch._dynamo.reset()
+    yield
 
-    with handle_error(benchmark), torch.device(device):
-        _, tensors, op, expected = ctx
+def torch_timer() -> float:
+    if torch.empty(()).is_cuda:
+        torch.cuda.synchronize()
+    return time.perf_counter()
+
+# @conditional(toy.on_global("toy_tracing"), cuda_trace)
+def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, tensor_cls: type[StringColumnTensor], device: str, return_mask: bool, torch_compile: bool):
+
+    with torch_device(device), torch_clean(device), handle_error(benchmark), torch_profile(benchmark), toy_trace():
+        meta, tensors, op, expected = ctx
         tensor = transfer_col(tensors[tensor_cls.__name__], device)
-    
+
         if torch_compile:
             apply_op = torch.compile(op.apply)
         else:
             apply_op = op.apply
 
         result = benchmark(apply_op, tensor, return_mask)
+        if return_mask:
+            result = result.nonzero().view(-1)
 
         tuple_count = len(tensor)
         query_result_size = len(result)
@@ -362,17 +403,17 @@ def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext,
         benchmark.extra_info["tuple_element_size_bytes"] = tuple_element_size
         benchmark.extra_info["total_size_bytes"] = total_size
 
+        total, uniq, sel = meta.total_count, meta.unique_count, meta.selectivity_list[0]
+        assert query_result_size == pytest.approx(
+            uniq + (total - uniq) * sel, rel=0.05
+        ), f"Result size {query_result_size} not matching expected {(total - uniq) * sel} for selectivity {sel}, total {total}, unique {uniq}"
+
         if expected is not None:
-            if return_mask:
-                result = result.nonzero().view(-1)
             assert torch.equal(expected.to(result.device), result), f"{tensor_cls.__name__} did not produce expected results."
 
 def string_transfer(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, tensor_cls: type[StringColumnTensor], device: str):
-    if device == "cuda":
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
 
-    with handle_error(benchmark), torch.device(device):
+    with torch_device(device), torch_clean(device), handle_error(benchmark):
         _, tensors, op, _ = ctx
         tensor = benchmark(transfer_col, tensors[tensor_cls.__name__], device)
         result = op.apply(tensor)
@@ -464,7 +505,6 @@ def mssb_param_id(params: tuple[str, int, int, int, str, float, str, type[String
 class TestStringColumnTensor:
 
     @pytest.mark.parametrize("group,scale,col,predicate,device,tensor_cls,return_mask,torch_compile", tpch_params, scope="class", ids=map(tpch_param_id, tpch_params))
-    @pytest.mark.usefixtures("torch_profile")
     def test_tpch_string_processing(self, benchmark, tpch_context, tensor_cls: type[StringColumnTensor], scale, col, predicate, device, return_mask, torch_compile, group):
         print(f"Testing TPCH string tensor query: scale={scale}, col={col}, predicate={predicate}, device={device}, tensor={tensor_cls.__name__}, return_mask={return_mask}, torch_compile={torch_compile}")
         # benchmark.group += f" | FilterScan(l_shipmode==AIR)"
@@ -474,7 +514,6 @@ class TestStringColumnTensor:
         string_processing(benchmark, tpch_context, tensor_cls, device, return_mask, torch_compile)
 
     @pytest.mark.parametrize("group,total_count,unique_count,max_length,predicate,selectivity,device,tensor_cls,return_mask,torch_compile", mssb_params, scope="class", ids=map(mssb_param_id, mssb_params))
-    @pytest.mark.usefixtures("torch_profile")
     def test_mssb_string_processing(self, benchmark, mssb_context, tensor_cls: type[StringColumnTensor], total_count, unique_count, max_length, predicate, selectivity, device, return_mask, torch_compile, group):
         print(f"Testing MSSB string tensor query: total_count={total_count}, unique_count={unique_count}, max_length={max_length}, predicate={predicate}, selectivity={selectivity}, device={device}, tensor={tensor_cls.__name__}, return_mask={return_mask}, torch_compile={torch_compile}")
         benchmark.group = "string_tensor_query_processing | MSSB"

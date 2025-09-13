@@ -35,8 +35,8 @@ class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
             # if len(match_index) == 0:
             #     break
             # Filter the encoded tensor for the current character
-            next_index = (self.encoded_tensor_transpose[i][match_index] == query_tensor[i]).nonzero().view(-1)
-            match_index = match_index[next_index]
+            next_mask = (self.encoded_tensor_transpose[i][match_index] == query_tensor[i])
+            match_index = match_index[next_mask]
         return match_index
 
     def query_less_than(self, query: str, return_mask=False) -> torch.Tensor:
@@ -64,9 +64,14 @@ class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
             lt_index.append(match_index[filtered_tensor < query_tensor[i]])
             match_index = match_index[filtered_tensor == query_tensor[i]]
 
-        del match_index  # Free memory
         lt_index = torch.cat(lt_index)
-        lt_index = lt_index.msort()
+        if len(lt_index) <= 10 ** 6:
+            lt_index = lt_index.msort()
+        else:
+            min_val, min_idx = torch.min(lt_index, dim=0)
+            lt_index[0], lt_index[min_idx] = min_val, lt_index[0]
+            max_val, max_idx = torch.max(lt_index, dim=0)
+            lt_index[-1], lt_index[max_idx] = max_val, lt_index[-1]
         return lt_index
 
     def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:

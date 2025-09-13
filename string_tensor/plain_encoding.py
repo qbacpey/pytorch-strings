@@ -53,12 +53,15 @@ class PlainEncodingStringColumnTensor(StringColumnTensor):
 
         ne_mask = self.encoded_tensor != query_tensor
         # Find the first position where they differ, or the very first position if they are equal
-        first_ne_index = ne_mask.to(torch.uint8).argmax(dim=1)
+        if torch.compiler.is_compiling():
+            first_diff_index = ne_mask.to(torch.uint8).argmax(dim=1)
+        else:
+            first_diff_index = ne_mask.view(torch.uint8).argmax(dim=1)
         del ne_mask  # Free memory
 
-        first_ne_tensor = self.encoded_tensor[torch.arange(len(self)), first_ne_index]
+        first_diff_tensor = self.encoded_tensor[torch.arange(len(self)), first_diff_index]
         # Get whether the first differing position is less than the query, or must be false if they are equal
-        lt_mask = first_ne_tensor < query_tensor[first_ne_index]
+        lt_mask = first_diff_tensor < query_tensor[first_diff_index]
 
         if return_mask:
             return lt_mask

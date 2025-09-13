@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from string_tensor import *
 from dataset import StringColumnMetadata, StringTensorDict
 
-def generate_mssb_data(total_count, unique_count, max_length, predicate: Optional[str] = None, selectivity_list: Optional[list[float]] = None) -> tuple[StringTensorDict, list[tuple[float, str]]]:
+def generate_mssb_data(total_count, unique_count, min_length, max_length, predicate: Optional[str] = None, selectivity_list: Optional[list[float]] = None) -> tuple[StringTensorDict, list[tuple[float, str]]]:
     """
     Generate string columns for OLAP testing.
     
@@ -33,17 +33,17 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
        data: List of strings (length is total_count)
        query_candidates: Dictionary with selectivity as key and candidate query string as value
     """
-    def random_string(max_length: int = max_length) -> str:
-        """Generate a random string with length between 1 and max_length."""
-        l = random.randint(1, max_length)
+    def random_string(min_length: int = min_length, max_length: int = max_length) -> str:
+        """Generate a random string with length between min_length and max_length."""
+        l = random.randint(min_length, max_length)
         return ''.join(random.choices(string.ascii_letters + string.digits, k=l))
 
-    def unique_random_strings(count: int, max_length: int = max_length, prefix="", exclude=[]) -> list[str]:
-        """Generate count unique random strings with lengths between 1 and max_length."""
+    def unique_random_strings(count: int, min_length: int = min_length, max_length: int = max_length, prefix="", exclude=[]) -> list[str]:
+        """Generate count unique random strings with lengths between min_length and max_length."""
         uniq_strs = set()
         exclude = set(exclude)
         while len(uniq_strs) < count:
-            s = prefix + random_string(max_length)
+            s = prefix + random_string(max(min_length - len(prefix), 0), max_length - len(prefix))
             if s not in uniq_strs and s not in exclude:
                 uniq_strs.add(s)
         return list(uniq_strs)
@@ -115,8 +115,8 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
     # Predicate is "equal"
     # Let the selectivity_list in front for the weight arr of uni string, the rest value would be broken down by Zipf distribution
     elif predicate.lower() in ["equal", "eq"]:
-        uniq_strs = sorted(unique_random_strings(unique_count))
-        selectivity_list = sorted(selectivity_list)
+        uniq_strs = unique_random_strings(unique_count)
+        # selectivity_list = sorted(selectivity_list)
         total_selectivity = sum(selectivity_list)
         num_selectivities = len(selectivity_list)
         if total_selectivity > 1:
@@ -171,8 +171,8 @@ def generate_mssb_data(total_count, unique_count, max_length, predicate: Optiona
         cand_total_count = sum(cand_uniq_counts)
         uniq_strs, weights, prefixes = [], [], []
         for i, count in enumerate(cand_uniq_counts):
-            prefix = random_string()[:random.randint(1, max_length * 4 // 5)]
-            uniq_strs.extend(unique_random_strings(count, max_length - len(prefix), prefix, exclude=uniq_strs))
+            prefix = random_string(min_length, min_length + (max_length - min_length) * 1 // 2)
+            uniq_strs.extend(unique_random_strings(count, min_length, max_length, prefix, exclude=uniq_strs))
             weights.extend(zipf_distribution(count) * selectivity_list[i])
             prefixes.append(prefix)
         uniq_strs.extend(unique_random_strings(unique_count - cand_total_count, exclude=uniq_strs))
@@ -196,7 +196,7 @@ class TestStringGenerator(unittest.TestCase):
         unique_count = self.unique_count or 10
         max_length = self.max_length or 20
 
-        data, candidates = generate_mssb_data(total_count, unique_count, max_length)
+        data, candidates = generate_mssb_data(total_count, unique_count, 1, max_length)
         data = data["list"]
         self.assertEqual(len(data), total_count)
         for s in data:
@@ -209,7 +209,7 @@ class TestStringGenerator(unittest.TestCase):
         unique_count = self.unique_count or 20
         max_length = self.max_length or 20
         selectivities = self.selectivity_list or [0.05, 0.2, 0.5]  # For example 5%, 20%, 50%
-        data, candidates = generate_mssb_data(total_count, unique_count, max_length,
+        data, candidates = generate_mssb_data(total_count, unique_count, 1, max_length,
                                                  predicate="equal",
                                                  selectivity_list=selectivities)
         data = data["list"]  
@@ -235,7 +235,7 @@ class TestStringGenerator(unittest.TestCase):
         unique_count = self.unique_count or 20
         max_length = self.max_length or 20
         selectivities = self.selectivity_list or [0.1, 0.3, 0.7]
-        data, candidates = generate_mssb_data(total_count, unique_count, max_length,
+        data, candidates = generate_mssb_data(total_count, unique_count, 1, max_length,
                                                  predicate="less_than",
                                                  selectivity_list=selectivities)
         data = data["list"]
@@ -261,7 +261,7 @@ class TestStringGenerator(unittest.TestCase):
         unique_count = self.unique_count or 20
         max_length = self.max_length or 20
         selectivities = self.selectivity_list or [0.1, 0.4]
-        data, candidates = generate_mssb_data(total_count, unique_count, max_length,
+        data, candidates = generate_mssb_data(total_count, unique_count, 1, max_length,
                                                  predicate="prefix",
                                                  selectivity_list=selectivities)
         data = data["list"]
@@ -281,7 +281,7 @@ class TestStringGenerator(unittest.TestCase):
             self.assertAlmostEqual(actual, expected, delta=round(0.05 * total_count))
 # ==============================================
 
-def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate, selectivity_list, path="mssb_data"):
+def generate_and_save_mssb_data(total_count, unique_count, min_length, max_length, predicate, selectivity_list, path="mssb_data"):
     """
     Generate test data columns based on input parameters:
       total_count, unique_count, max_length, predicate, selectivity
@@ -305,7 +305,7 @@ def generate_and_save_mssb_data(total_count, unique_count, max_length, predicate
 
     # No matching record found, generate a new dataset
     # Call external generate_mssb_data function (returns data, query_candidates)
-    data, query_candidates = generate_mssb_data(total_count, unique_count, max_length, predicate, selectivity_list)
+    data, query_candidates = generate_mssb_data(total_count, unique_count, min_length, max_length, predicate, selectivity_list)
 
     if data["list"]:
         with torch.device("cuda" if torch.cuda.is_available() else "cpu"):
@@ -465,7 +465,7 @@ def main():
         TestStringGenerator.selectivity_list = args.selectivity_list
         unittest.main()
     else:
-        generate_and_save_mssb_data(args.total_count, args.unique_count, args.max_length, args.predicate, args.selectivity_list)
+        generate_and_save_mssb_data(args.total_count, args.unique_count, 1, args.max_length, args.predicate, args.selectivity_list)
 
 if __name__ == '__main__':
     main()
