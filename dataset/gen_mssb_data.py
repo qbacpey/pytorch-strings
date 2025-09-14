@@ -142,7 +142,7 @@ def generate_mssb_data(total_count, unique_count, min_length, max_length, predic
 
         diff_selectivities = np.diff(selectivity_list, prepend=0)
         cand_uniq_counts = np.floor(np.array(diff_selectivities) * unique_count).astype(int)
-        cand_uniq_counts = np.ceil((cand_uniq_counts + 1) / 2).astype(int)
+        # cand_uniq_counts = np.ceil((cand_uniq_counts + 1) / 2).astype(int)
         cand_total_count = sum(cand_uniq_counts)
         weights = []
         for i, count in enumerate(cand_uniq_counts):
@@ -167,7 +167,7 @@ def generate_mssb_data(total_count, unique_count, min_length, max_length, predic
             raise ValueError("Number of selectivities cannot exceed unique_count")
 
         cand_uniq_counts = np.floor(np.array(selectivity_list) * unique_count).astype(int)
-        cand_uniq_counts = np.ceil((cand_uniq_counts + 1) / 2).astype(int)
+        # cand_uniq_counts = np.ceil((cand_uniq_counts + 1) / 2).astype(int)
         cand_total_count = sum(cand_uniq_counts)
         uniq_strs, weights, prefixes = [], [], []
         for i, count in enumerate(cand_uniq_counts):

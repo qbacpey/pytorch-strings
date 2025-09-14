@@ -123,9 +123,15 @@ class Catalog:
         self.path = path
         self.records = records
 
-    def get_col_record(self, col_name: str) -> CatalogRecord | None:
+    def get_col_record(self, col_name: str, predicate: str) -> CatalogRecord | None:
+        predicate = (
+            "equal" if predicate.lower().startswith("eq") else 
+            "less_than" if predicate.lower().startswith("l") else 
+            "prefix" if predicate.lower().startswith("pre") else 
+            predicate
+        )
         for record in self.records:
-            if record.column == col_name:
+            if record.column == col_name and record.predicate == predicate:
                 return record
         return None
 
