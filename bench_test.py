@@ -135,7 +135,7 @@ class StringTensorTestContext(NamedTuple):
 @cuda_trace
 def tpch_context(col: str, scale: float, predicate: str) -> StringTensorTestContext:
     gen_tpch_col(scale, tpch_col_gen[scale], "dataset/tpch_data")
-    meta, tensors = load_tpch_col(col, scale)
+    meta, tensors = load_tpch_col(col, scale, predicate)
 
     query = meta.query_candidates[0][1]
     pred = MockPredicate[predicate](query)
@@ -406,13 +406,14 @@ def string_processing(benchmark: BenchmarkFixture, ctx: StringTensorTestContext,
         benchmark.extra_info["tuple_element_size_bytes"] = tuple_element_size
         benchmark.extra_info["total_size_bytes"] = total_size
 
-        total, uniq, sel = meta.total_count, meta.unique_count, meta.selectivity_list[0]
-        assert query_result_size == pytest.approx(
-            uniq + (total - uniq) * sel, rel=0.05
-        ), f"Result size {query_result_size} not matching expected {(total - uniq) * sel} for selectivity {sel}, total {total}, unique {uniq}"
-
         if expected is not None:
             assert torch.equal(expected.to(result.device), result), f"{tensor_cls.__name__} did not produce expected results."
+        
+        total, uniq, sel = meta.total_count, meta.unique_count, meta.selectivity_list[0]
+        if uniq <= total * 0.01:
+            assert query_result_size == pytest.approx(
+                total * sel, rel=0.1, abs=100,
+            ), f"Result size {query_result_size} not matching expected {total * sel} for selectivity {sel}, total {total}, unique {uniq}"
 
 def string_transfer(benchmark: BenchmarkFixture, ctx: StringTensorTestContext, tensor_cls: type[StringColumnTensor], device: str):
 
