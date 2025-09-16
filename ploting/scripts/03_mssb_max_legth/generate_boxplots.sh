@@ -13,7 +13,7 @@
 # --- Configuration ---
 
 # Path to the aggregated CSV file from your experiments
-INPUT_CSV="20250913_mssb_all_runs.csv"
+INPUT_CSV="20250914_mssb_max_len_alls.csv"
 
 # Path to the R script that generates the boxplots
 R_SCRIPT="01_boxplot_mssb.r"

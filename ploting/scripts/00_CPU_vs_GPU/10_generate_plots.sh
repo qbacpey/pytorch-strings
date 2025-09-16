@@ -4,13 +4,13 @@
 
 # --- Configuration ---
 # Point these to your actual data files
-TPCH_CSV="0909_tpch_1to200_all.csv"
+TPCH_CSV="0914_test_tpch_string_processing_output.csv"
 MSSB_CSV="0909_mssb_10to200_all.csv"
 
 # Define the different configurations to loop through
 PREDICATES=("Eq" "Lt" "Prefix")
 MASKS=("TRUE" "FALSE")
-COMPILES=("TRUE" "FALSE")
+COMPILES=("FALSE")
 
 # R script paths
 TPCH_SCRIPT="00_linear_GB_CPU_vs_GPU_tpch.r"

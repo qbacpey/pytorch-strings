@@ -14,7 +14,8 @@ from toy import *
 
 # 0.1 - 0.9, 1 - 10, 10 - 100
 # tpch_scale = [[*np.arange(0.1, 1, 0.1), *range(1, 10), *range(10, 110, 10)][0:2]]
-tpch_scale = [[1, *range(10, 210, 10)]]
+# tpch_scale = [[1, *range(10, 210, 10)]]
+tpch_scale = [[200]]
 # tpch_scale = [[1]]
 tpch_col = [["l_shipmode"]]
 # tpch_predicate = [["lt","prefix"]]
@@ -45,6 +46,7 @@ mssb_total_count = [10**8]
 mssb_unique_count = [10000]
 mssb_max_length = [[20]]
 mssb_predicate = [["eq","lt","prefix"]]
+# mssb_predicate = [["prefix"]]
 mssb_selectivity = [[0.15]]
 mssb_return_mask = [[False, True]]
 mssb_group_name = [[""]]
@@ -71,10 +73,10 @@ tensor_cls = [[
 # ]]
 
 # device = [["cpu", "cuda"][-1]]
-device = [["cpu", "cuda"]]
-# device = [["cuda"]]
+# device = [["cpu", "cuda"]]
+device = [["cuda"]]
 
-# torch_compile = [[True]]
+# torch_compile = [[False]]
 torch_compile = [[False, True]]
 
 def params_grid_groups(*args):

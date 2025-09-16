@@ -37,10 +37,12 @@ PREDICATE_TO_PLOT <- args[4]
 output_dir <- "plots"
 
 # 0 = left, 0.5 = center, 1 = right
-TITLE_HJUST <- 0.5
-SUBTITLE_HJUST <- 0.5
-TITLE_SIZE <- 16
-SUBTITLE_SIZE <- 12
+TITLE_HJUST <- 0
+SUBTITLE_HJUST <- 0
+TITLE_SIZE <- 22
+SUBTITLE_SIZE <- 15
+LEGEND_SPACING_Y <- unit(0, "cm")
+SHOW_LEGEND <- FALSE
 
 # Theoretical Memory Bandwidth (in bytes per second)
 THEORETICAL_GPU_BANDWIDTH <- 1.1e12 # 1.1 TB/s
@@ -53,6 +55,15 @@ BACKGROUND_STYLE <- "white"
 encoding_order <- c(
   "PlainEncoding", "CPlainEncoding", "UnsortedDictionaryEncoding",
   "UnsortedCDictionaryEncoding", "DictionaryEncoding", "CDictionaryEncoding"
+)
+
+encoding_name_map <- c(
+  "PlainEncoding" = "Row Plain",
+  "CPlainEncoding" = "Column Plain",
+  "UnsortedDictionaryEncoding" = "Unsorted Row Dict",
+  "UnsortedCDictionaryEncoding" = "Unsorted Column Dict",
+  "DictionaryEncoding" = "Sorted Row Dict",
+  "CDictionaryEncoding" = "Sorted Column Dict"
 )
 
 predicate_map <- c(
@@ -76,6 +87,7 @@ plot_data <- data %>%
     throughput_gb_per_sec = (total_size_bytes / .data[[TIME_METRIC]]) / 1e9,
     encoding_type = str_replace(`param:tensor_cls`, "StringColumnTensor", ""),
     encoding_type = factor(encoding_type, levels = encoding_order),
+    encoding_type = recode(encoding_type, !!!encoding_name_map),
     pred_name = recode(pred, !!!predicate_map)
   )
 
@@ -91,15 +103,23 @@ if (nrow(plot_data) > 0) {
   # Create the plot
   p <- ggplot(plot_data, aes(x = encoding_type, y = throughput_gb_per_sec, fill = encoding_type)) +
     geom_boxplot() +
-    # --- MODIFIED: Add a linetype aesthetic to create a legend entry ---
+    # --- MODIFIED: Use a fixed string for the linetype aesthetic ---
     geom_hline(
-      aes(yintercept = THEORETICAL_GPU_BANDWIDTH / 1e9, linetype = paste("Theoretical Max:", round(THEORETICAL_GPU_BANDWIDTH / 1e9), "GB/s")),
+      aes(yintercept = THEORETICAL_GPU_BANDWIDTH / 1e9, linetype = "Theoretical Bandwidth (DGX)"),
       color = "#D55E00", linewidth = 1
     ) +
-    # --- NEW: Define the linetype and its legend entry ---
+    # --- MODIFIED: Define the linetype and its legend entry ---
     scale_linetype_manual(
-      name = "Bandwidth", # Legend title
-      values = c("dashed") # Use a dashed line
+      name = "Line Type",
+      values = c("Theoretical Bandwidth (DGX)" = "dashed"),
+      labels = c(paste("Theoretical Max:", round(THEORETICAL_GPU_BANDWIDTH / 1e9), "GB/s"))
+    ) +
+    # --- NEW: Explicitly define the fill legend for encodings ---
+    scale_fill_discrete(name = "Encoding Type") +
+    # --- MODIFIED: Ensure all legends are shown and arranged vertically ---
+    guides(
+      fill = guide_legend(title.position = "left", ncol = 7),
+      linetype = guide_legend(title.position = "left", ncol = 2)
     ) +
     labs(
       title = paste("MSSB Throughput Distribution for Predicate:", descriptive_pred_name),
@@ -111,9 +131,10 @@ if (nrow(plot_data) > 0) {
     theme(
       plot.title = element_text(face = "bold", hjust = TITLE_HJUST, size = TITLE_SIZE),
       plot.subtitle = element_text(hjust = SUBTITLE_HJUST, size = SUBTITLE_SIZE),
-      axis.text.x = element_text(angle = 45, hjust = 1), # Rotate labels to prevent overlap
-      # --- MODIFIED: Show the legend at the bottom ---
-      legend.position = "bottom"
+      axis.text.x = element_text(angle = 0, hjust = 0.5), # Rotate labels to prevent overlap
+      legend.position = if (SHOW_LEGEND) "bottom" else "none",
+      legend.box = "vertical",
+      legend.spacing.y = LEGEND_SPACING_Y
     )
 
   # Generate a descriptive filename

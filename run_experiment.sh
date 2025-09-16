@@ -20,7 +20,7 @@
 # 2025-09-13 22:13:18
 # 300 = 8h
 
-NUM_RUNS=300
+NUM_RUNS=100
 
 # Base names for the final accumulated output files
 BASE_CSV_NAME="mssb_max_len_alls"
