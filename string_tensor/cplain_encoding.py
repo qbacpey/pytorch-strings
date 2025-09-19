@@ -21,77 +21,77 @@ class CPlainEncodingStringColumnTensor(PlainEncodingStringColumnTensor):
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
         query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
 
-        if return_mask:
-            match_mask = torch.ones(len(self),dtype=torch.bool)
-            for i in range(self.max_length):
-                # if not match_mask.any():
-                #     break
-                next_mask = (self.encoded_tensor_transpose[i] == query_tensor[i])
-                match_mask &= next_mask
-            return match_mask
-
-        match_index = torch.arange(len(self))
+        match_mask = torch.ones(len(self),dtype=torch.bool)
         for i in range(self.max_length):
-            # if len(match_index) == 0:
+            # if not match_mask.any():
             #     break
-            # Filter the encoded tensor for the current character
-            next_mask = (self.encoded_tensor_transpose[i][match_index] == query_tensor[i])
-            match_index = match_index[next_mask]
-        return match_index
+            next_mask = (self.encoded_tensor_transpose[i] == query_tensor[i])
+            match_mask &= next_mask
+
+        if return_mask:
+            return match_mask
+        return match_mask.nonzero().view(-1)
+
+        # match_index = torch.arange(len(self))
+        # for i in range(self.max_length):
+        #     # if len(match_index) == 0:
+        #     #     break
+        #     # Filter the encoded tensor for the current character
+        #     next_mask = (self.encoded_tensor_transpose[i][match_index] == query_tensor[i])
+        #     match_index = match_index[next_mask]
+        # return match_index
 
     def query_less_than(self, query: str, return_mask=False) -> torch.Tensor:
         # Create properly padded query tensor
         query_tensor = torch.tensor(list(bytes(query, "ascii")), dtype=torch.uint8)
         query_tensor = torch.nn.functional.pad(query_tensor, (0, self.max_length - len(query_tensor)), value=0)
 
-        if return_mask:
-            lt_mask = torch.zeros(len(self),dtype=torch.bool)
-            match_mask = torch.ones(len(self),dtype=torch.bool)
-            for i in range(self.max_length):
-                # if not match_mask.any():
-                #     break
-                lt_mask |= match_mask & (self.encoded_tensor_transpose[i] < query_tensor[i])
-                match_mask &= (self.encoded_tensor_transpose[i] == query_tensor[i])
-            return lt_mask
-
-        lt_index = []
-        match_index = torch.arange(len(self), dtype=torch.long)
+        lt_mask = torch.zeros(len(self),dtype=torch.bool)
+        match_mask = torch.ones(len(self),dtype=torch.bool)
         for i in range(self.max_length):
-            # if len(match_index) == 0:
+            # if not match_mask.any():
             #     break
-            # Filter the encoded tensor for the current character
-            filtered_tensor = self.encoded_tensor_transpose[i][match_index]
-            lt_index.append(match_index[filtered_tensor < query_tensor[i]])
-            match_index = match_index[filtered_tensor == query_tensor[i]]
+            lt_mask |= match_mask & (self.encoded_tensor_transpose[i] < query_tensor[i])
+            match_mask &= (self.encoded_tensor_transpose[i] == query_tensor[i])
 
-        lt_index = torch.cat(lt_index)
-        if len(lt_index) <= 10 ** 6:
-            lt_index = lt_index.msort()
-        else:
-            min_val, min_idx = torch.min(lt_index, dim=0)
-            lt_index[0], lt_index[min_idx] = min_val, lt_index[0]
-            max_val, max_idx = torch.max(lt_index, dim=0)
-            lt_index[-1], lt_index[max_idx] = max_val, lt_index[-1]
-        return lt_index
+        if return_mask:
+            return lt_mask
+        return lt_mask.nonzero().view(-1)
+
+        # lt_index = []
+        # match_index = torch.arange(len(self), dtype=torch.long)
+        # for i in range(self.max_length):
+        #     # if len(match_index) == 0:
+        #     #     break
+        #     # Filter the encoded tensor for the current character
+        #     filtered_tensor = self.encoded_tensor_transpose[i][match_index]
+        #     lt_index.append(match_index[filtered_tensor < query_tensor[i]])
+        #     match_index = match_index[filtered_tensor == query_tensor[i]]
+
+        # lt_index = torch.cat(lt_index)
+        # lt_index = lt_index.msort()
+        # return lt_index
 
     def query_prefix(self, prefix: str, return_mask=False) -> torch.Tensor:
         prefix_len = len(prefix)
         prefix_tensor = torch.tensor(list(bytes(prefix, "ascii")), dtype=torch.uint8)
 
-        if return_mask:
-            match_mask = torch.ones(len(self),dtype=torch.bool)
-            for i in range(prefix_len):
-                # if not match_mask.any():
-                #     break
-                next_mask = (self.encoded_tensor_transpose[i] == prefix_tensor[i])
-                match_mask &= next_mask
-            return match_mask
-
-        match_index = torch.arange(len(self), dtype=torch.long)
+        match_mask = torch.ones(len(self),dtype=torch.bool)
         for i in range(prefix_len):
-            # if len(match_index) == 0:
+            # if not match_mask.any():
             #     break
-            # Filter the encoded tensor for the current character
-            next_mask = (self.encoded_tensor_transpose[i][match_index] == prefix_tensor[i])
-            match_index = match_index[next_mask]
-        return match_index
+            next_mask = (self.encoded_tensor_transpose[i] == prefix_tensor[i])
+            match_mask &= next_mask
+
+        if return_mask:
+            return match_mask
+        return match_mask.nonzero().view(-1)
+
+        # match_index = torch.arange(len(self), dtype=torch.long)
+        # for i in range(prefix_len):
+        #     # if len(match_index) == 0:
+        #     #     break
+        #     # Filter the encoded tensor for the current character
+        #     next_mask = (self.encoded_tensor_transpose[i][match_index] == prefix_tensor[i])
+        #     match_index = match_index[next_mask]
+        # return match_index

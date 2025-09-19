@@ -56,7 +56,7 @@ def construct_tensors(tensors: StringTensorDict) -> StringTensorDict:
             for tensor in [strs, plain, cplain, dict, udict, cdict, ucdict]})
     return tensors
 
-def load_tpch_col(col_name: str, scale: float, path: str = "dataset/tpch_data") -> StringTensorData:
+def load_tpch_col(col_name: str, scale: float, predicate: str, path: str = "dataset/tpch_data") -> StringTensorData:
     """
     Get the specified column of TPCH data
     :param col_name: column name
@@ -65,7 +65,7 @@ def load_tpch_col(col_name: str, scale: float, path: str = "dataset/tpch_data") 
     """
     from .gen_tpch_data import get_tpch_catalog
     catalog = get_tpch_catalog(scale, path)
-    if meta := catalog.get_col_record(col_name):
+    if meta := catalog.get_col_record(col_name, predicate):
         tensors = catalog.get_col_data(meta.column)
         tensors = construct_tensors(tensors)
         return StringTensorData(meta, tensors)
