@@ -59,7 +59,7 @@ THEORETICAL_CPU_BANDWIDTH <- 60e9  # 60 GB/s
 
 # Time metric to use for throughput calculation
 TIME_METRIC <- "mean"
-BACKGROUND_STYLE <- "transparent"
+BACKGROUND_STYLE <- "white"
 
 # --- 1. Data Loading and Preparation ---
 data <- read_csv(input_file, show_col_types = FALSE)

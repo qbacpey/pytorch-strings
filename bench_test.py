@@ -52,8 +52,6 @@ mssb_return_mask = [[False, True]]
 mssb_group_name = [[""]]
 
 full_encoding = [
-    PlainEncodingStringColumnTensor,
-    CPlainEncodingStringColumnTensor,
     DictionaryEncodingStringColumnTensor,
     CDictionaryEncodingStringColumnTensor,
     UnsortedDictionaryEncodingStringColumnTensor,
@@ -61,8 +59,6 @@ full_encoding = [
 ]
 # tensor_cls = [full_encoding[0]]
 tensor_cls = [[
-    PlainEncodingStringColumnTensor,
-    CPlainEncodingStringColumnTensor,
     DictionaryEncodingStringColumnTensor,
     CDictionaryEncodingStringColumnTensor,
     UnsortedDictionaryEncodingStringColumnTensor,
