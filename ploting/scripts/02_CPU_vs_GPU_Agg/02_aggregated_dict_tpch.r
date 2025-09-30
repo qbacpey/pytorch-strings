@@ -32,7 +32,7 @@ PANEL_SPACING <- unit(2, "lines")
 output_dir <- "plots"
 
 # --- NEW: Select which predicates and encodings to plot ---
-PREDICATES_TO_PLOT <- c("Lt", "Prefix")
+PREDICATES_TO_PLOT <- c("Eq", "Lt", "Prefix")
 DICT_ENCODINGS_TO_PLOT <- c(
   "UnsortedDictionaryEncoding", "UnsortedCDictionaryEncoding", 
   "DictionaryEncoding", "CDictionaryEncoding"
@@ -45,12 +45,14 @@ SUBTITLE_HJUST <- 0.0
 TITLE_SIZE <- 22
 SUBTITLE_SIZE <- 15
 LEGEND_MARGIN_VAL <- margin(t = -10, unit = "pt")
+AXIS_TEXT_SIZE <- 14
+AXIS_TITLE_SIZE <- 16
 X_AXIS_BREAKS <- c(1, 10, 50, 100, 150, 200)
 
 # Theoretical Memory Bandwidth (in bytes per second)
 THEORETICAL_GPU_BANDWIDTH <- 1.1e12 # 1.1 TB/s
 TIME_METRIC <- "mean"
-BACKGROUND_STYLE <- "transparent"
+BACKGROUND_STYLE <- "white"
 
 # --- 1. Data Loading and Preparation ---
 data <- read_csv(input_file, show_col_types = FALSE)
@@ -125,7 +127,8 @@ create_aggregated_plot <- function(df) {
       legend.position = "bottom",
       legend.box = "vertical",
       legend.margin = LEGEND_MARGIN_VAL,
-      axis.text = element_text(size = 12),
+      axis.text = element_text(size = AXIS_TEXT_SIZE),
+      axis.title = element_text(size = AXIS_TITLE_SIZE),
       panel.spacing = PANEL_SPACING
     )
   

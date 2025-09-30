@@ -4,14 +4,14 @@
 
 # --- Configuration ---
 # Point this to your actual data file
-TPCH_CSV="0914_test_tpch_string_processing_output.csv"
+TPCH_CSV="0919_CUDA-only_NoPlain_test_tpch_string_processing_output.csv"
 
 # Define the different configurations to loop through
 MASKS=("TRUE" "FALSE")
 COMPILES=("TRUE" "FALSE")
 
 # R script path
-TPCH_AGGREGATE_SCRIPT="02_aggregated_dict_tpch.r"
+TPCH_AGGREGATE_SCRIPT="03_aggregated_dict_tpch_row_only.r"
 
 # --- Generate TPC-H Aggregated Plots ---
 echo "--- Generating TPC-H Aggregated Plots ---"

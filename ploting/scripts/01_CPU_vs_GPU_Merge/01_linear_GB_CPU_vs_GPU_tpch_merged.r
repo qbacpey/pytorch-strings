@@ -35,7 +35,12 @@ SUBTITLE_HJUST <- 0
 TITLE_SIZE <- 22
 SUBTITLE_SIZE <- 15
 LEGEND_MARGIN_VAL <- margin(t = -10, unit = "pt")
+LEGEND_TITLE_SIZE <- 16
+LEGEND_TEXT_SIZE <- 14
 X_AXIS_BREAKS <- c(1, 10, 50, 100, 150, 200)
+AXIS_TEXT_SIZE <- 14
+AXIS_TITLE_SIZE <- 16
+STRIP_TEXT_SIZE <- 16
 
 PANEL_SPACING <- unit(1, "lines")
 
@@ -100,19 +105,28 @@ create_throughput_plot <- function(df) {
     geom_line(data = filter(df, `param:device` == "cuda"), aes(y = throughput_gb_per_sec, color = PlotGroup, group = PlotGroup), linewidth = 1) +
     geom_point(data = filter(df, `param:device` == "cuda"), aes(y = throughput_gb_per_sec, color = PlotGroup, shape = PlotGroup), size = 3)
 
-  # --- MODIFIED: Add theoretical bandwidth lines without creating legend entries ---
+  # --- MODIFIED: Add theoretical bandwidth lines by mapping the linetype aesthetic ---
   if (SHOW_THEORETICAL_BANDWIDTH) {
     p <- p +
-      # Add CUDA theoretical line with fixed styling
-      geom_hline(yintercept = THEORETICAL_GPU_BANDWIDTH / 1e9, color = "#D55E00", linetype = "dashed", linewidth = 1) +
-      # Add CPU theoretical line with fixed styling
-      geom_hline(yintercept = THEORETICAL_CPU_BANDWIDTH / 1e9, color = "#0072B2", linetype = "dashed", linewidth = 1)
+      # Add CUDA theoretical line
+      geom_hline(aes(yintercept = THEORETICAL_GPU_BANDWIDTH / 1e9, linetype = "CUDA Theoretical"), color = "#D55E00", linewidth = 1) +
+      # Add CPU theoretical line
+      geom_hline(aes(yintercept = THEORETICAL_CPU_BANDWIDTH / 1e9, linetype = "CPU Theoretical"), color = "#0072B2", linewidth = 1)
   }
 
   # --- MODIFIED: Simplify scales to only manage the CUDA implementations ---
   p <- p +
     scale_color_manual(name = "Implementation", values = plot_colors, labels = plot_labels) +
-    scale_shape_manual(name = "Implementation", values = plot_shapes, labels = plot_labels)
+    scale_shape_manual(name = "Implementation", values = plot_shapes, labels = plot_labels) +
+    # --- NEW: Add a manual scale for linetype to create the second legend ---
+    scale_linetype_manual(
+      name = "Theoretical Bandwidth",
+      values = c("CUDA Theoretical" = "dashed", "CPU Theoretical" = "dashed"),
+      labels = c(
+        "CUDA Theoretical" = paste0("CUDA (", THEORETICAL_GPU_BANDWIDTH / 1e9, " GB/s)"),
+        "CPU Theoretical" = paste0("CPU (", THEORETICAL_CPU_BANDWIDTH / 1e9, " GB/s)")
+      )
+    )
 
   if (!is.null(X_AXIS_BREAKS)) {
     p <- p + scale_x_discrete(breaks = as.character(X_AXIS_BREAKS))
@@ -120,8 +134,13 @@ create_throughput_plot <- function(df) {
 
   # --- MODIFIED: Set legend to have 2 columns for a horizontal layout ---
   p <- p + guides(
-    color = guide_legend(ncol = 2),
-    shape = guide_legend(ncol = 2)
+    color = guide_legend(ncol = 2, order = 1),
+    shape = guide_legend(ncol = 2, order = 1),
+    # --- NEW: Override the linetype legend to remove the slash mark ---
+    linetype = guide_legend(
+        override.aes = list(color = c("#0072B2", "#D55E00")),
+        order = 2
+    )
   ) +
     labs(x = "TPC-H Scale Factor", y = "Throughput (GB/s)") +
     theme_minimal(base_size = 14) +
@@ -131,8 +150,11 @@ create_throughput_plot <- function(df) {
       legend.position = "bottom",
       legend.box = "vertical",
       legend.margin = LEGEND_MARGIN_VAL,
-      axis.text = element_text(size = 12),
-      # --- NEW: Apply custom panel spacing ---
+      legend.title = element_text(size = LEGEND_TITLE_SIZE),
+      legend.text = element_text(size = LEGEND_TEXT_SIZE),
+      axis.text = element_text(size = AXIS_TEXT_SIZE),
+      axis.title = element_text(size = AXIS_TITLE_SIZE),
+      strip.text = element_text(size = STRIP_TEXT_SIZE),
       panel.spacing = PANEL_SPACING
     )
 
@@ -149,7 +171,7 @@ if (nrow(plot_data) > 0) {
   p <- create_throughput_plot(plot_data) +
     facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(
-      title = paste("TPC-H Throughput for Predicate:", descriptive_pred_name),
+      title = paste("TPC-H Throughput for all Encodings (Predicate: ", descriptive_pred_name, ")", sep = ""),
       subtitle = subtitle_text,
       caption = "Each panel represents a different string encoding algorithm."
     )

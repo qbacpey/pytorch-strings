@@ -10,7 +10,7 @@ MSSB_CSV="0909_mssb_10to200_all.csv"
 # Define the different configurations to loop through
 PREDICATES=("Eq" "Lt" "Prefix")
 MASKS=("TRUE" "FALSE")
-COMPILES=("FALSE")
+COMPILES=("TRUE" "FALSE")
 
 # R script paths
 TPCH_SCRIPT="00_linear_GB_CPU_vs_GPU_tpch.r"

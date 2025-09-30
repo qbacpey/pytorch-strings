@@ -14,8 +14,8 @@ from toy import *
 
 # 0.1 - 0.9, 1 - 10, 10 - 100
 # tpch_scale = [[*np.arange(0.1, 1, 0.1), *range(1, 10), *range(10, 110, 10)][0:2]]
-# tpch_scale = [[1, *range(10, 210, 10)]]
-tpch_scale = [[200]]
+tpch_scale = [[1, *range(10, 210, 10)]]
+# tpch_scale = [[200]]
 # tpch_scale = [[1]]
 tpch_col = [["l_shipmode"]]
 # tpch_predicate = [["lt","prefix"]]
@@ -41,8 +41,8 @@ tpch_group_name = [[""]]
 # These names will be included in benchmark output CSVs to help categorize and analyze results across groups.
 
 # 10^4 to 10^9
-# mssb_total_count = [[10 ** i for i in range(6, 10)]]
-mssb_total_count = [10**8]
+mssb_total_count = [[10 ** i for i in range(6, 10)]]
+# mssb_total_count = [10**8]
 mssb_unique_count = [10000]
 mssb_max_length = [[20]]
 mssb_predicate = [["eq","lt","prefix"]]
@@ -52,6 +52,8 @@ mssb_return_mask = [[False, True]]
 mssb_group_name = [[""]]
 
 full_encoding = [
+    PlainEncodingStringColumnTensor,
+    CPlainEncodingStringColumnTensor,
     DictionaryEncodingStringColumnTensor,
     CDictionaryEncodingStringColumnTensor,
     UnsortedDictionaryEncodingStringColumnTensor,
@@ -59,6 +61,8 @@ full_encoding = [
 ]
 # tensor_cls = [full_encoding[0]]
 tensor_cls = [[
+    PlainEncodingStringColumnTensor,
+    CPlainEncodingStringColumnTensor,
     DictionaryEncodingStringColumnTensor,
     CDictionaryEncodingStringColumnTensor,
     UnsortedDictionaryEncodingStringColumnTensor,
@@ -71,9 +75,10 @@ tensor_cls = [[
 # device = [["cpu", "cuda"][-1]]
 # device = [["cpu", "cuda"]]
 device = [["cuda"]]
+# device = [["cpu"]]
 
-# torch_compile = [[False]]
 torch_compile = [[False, True]]
+# torch_compile = [[True]]
 
 def params_grid_groups(*args):
     args = [

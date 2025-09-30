@@ -33,7 +33,7 @@ output_dir <- "plots"
 # --- NEW: In-script plotting options ---
 SHOW_THEORETICAL_BANDWIDTH <- TRUE
 SHOW_MAX_LENGTH <- FALSE
-SHOW_COMPILE <- FALSE
+SHOW_COMPILE <- TRUE
 
 # --- NEW: Title and Subtitle Position ---
 # 0 = left, 0.5 = center, 1 = right
@@ -45,12 +45,18 @@ TITLE_SIZE <- 22
 SUBTITLE_SIZE <- 15
 # Adjust the margin around the legend (t, r, b, l). Negative top margin reduces space.
 LEGEND_MARGIN_VAL <- margin(t = -10, unit = "pt")
+LEGEND_TITLE_SIZE <- 16
+LEGEND_TEXT_SIZE <- 14
+
+AXIS_TEXT_SIZE <- 15
+AXIS_TITLE_SIZE <- 18
+STRIP_TEXT_SIZE <- 16
 
 # --- NEW: X-axis label configuration ---
 # This controls which labels are displayed on the x-axis.
 # It does NOT filter the data; all data points will still be plotted.
 # Set to NULL to let ggplot decide the labels automatically.
-X_AXIS_BREAKS <- c(1, 10, 50, 100, 150, 200)
+X_AXIS_BREAKS <- c(1, 50, 100, 150, 200)
 # X_AXIS_BREAKS <- NULL
 
 # Theoretical Memory Bandwidth (in bytes per second)
@@ -59,7 +65,7 @@ THEORETICAL_CPU_BANDWIDTH <- 60e9  # 60 GB/s
 
 # Time metric to use for throughput calculation
 TIME_METRIC <- "mean"
-BACKGROUND_STYLE <- "white"
+BACKGROUND_STYLE <- "transparent"
 
 # --- 1. Data Loading and Preparation ---
 data <- read_csv(input_file, show_col_types = FALSE)
@@ -74,10 +80,10 @@ predicate_map <- c(
 encoding_name_map <- c(
   "PlainEncoding" = "Row Plain",
   "CPlainEncoding" = "Column Plain",
-  "UnsortedDictionaryEncoding" = "Unsorted Row Dict",
-  "UnsortedCDictionaryEncoding" = "Unsorted Column Dict",
-  "DictionaryEncoding" = "Sorted Row Dict",
-  "CDictionaryEncoding" = "Sorted Column Dict"
+  "UnsortedDictionaryEncoding" = "Unsorted Row Dictionary",
+  "UnsortedCDictionaryEncoding" = "Unsorted Column Dictionary",
+  "DictionaryEncoding" = "Sorted Row Dictionary",
+  "CDictionaryEncoding" = "Sorted Column Dictionary"
 )
 
 encoding_order <- c(
@@ -175,7 +181,11 @@ create_throughput_plot <- function(df) {
       legend.position = "bottom",
       legend.box = "vertical",
       legend.margin = LEGEND_MARGIN_VAL,
-       axis.text = element_text(size = 12) # Controls both x and y axis labels
+      legend.title = element_text(size = LEGEND_TITLE_SIZE),
+      legend.text = element_text(size = LEGEND_TEXT_SIZE),
+      axis.text = element_text(size = AXIS_TEXT_SIZE),
+      axis.title = element_text(size = AXIS_TITLE_SIZE),
+      strip.text = element_text(size = STRIP_TEXT_SIZE)
     )
   
   return(p)
@@ -207,7 +217,7 @@ if (nrow(plot_data) > 0) {
   p <- create_throughput_plot(plot_data) +
     facet_wrap(~encoding_type, scales = "fixed", ncol = 2) +
     labs(
-      title = paste("TPC-H Throughput for Predicate:", descriptive_pred_name),
+      title = paste("TPC-H Throughput for all Encodings (Predicate: ", descriptive_pred_name, ")", sep = ""),
       subtitle = subtitle_text,
       caption = "Each panel represents a different string encoding algorithm."
     )
